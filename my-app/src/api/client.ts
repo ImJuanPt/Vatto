@@ -7,7 +7,7 @@ export function setAuthToken(token: string | null) {
 }
 
 function buildUrl(path: string, query?: Query) {
-  const base = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:3000';
+  const base = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const url = new URL(base.replace(/\/$/, '') + normalizedPath);
   if (query) {
