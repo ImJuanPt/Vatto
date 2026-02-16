@@ -1,0 +1,53 @@
+import { Request, Response } from "express";
+import { IQueueService } from "../../../domain/interfaces/IQueueService";
+import { IReadingRepository } from "../../../domain/repositories/IReadingRepository";
+
+export class ReadingController {
+  constructor(private queueService: IQueueService, private readingRepo: IReadingRepository) {}
+
+  receiveReading = async (req: Request, res: Response) => {
+    try {
+      const readingData = req.body;
+
+      // Allow powerWatts to be 0, just not undefined/null
+      if (!readingData.deviceId || readingData.powerWatts == null) {
+        return res.status(400).json({ error: "Missing data" });
+      }
+
+      await this.queueService.addJob("readings_queue", readingData);
+
+      return res.status(202).json({ status: "queued", message: "Lectura recibida" });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  };
+
+  // GET /readings/latest/:deviceId
+  getLatest = async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      if (!deviceId) return res.status(400).json({ error: 'Missing deviceId' });
+      const list = await this.readingRepo.getLastReadings(Number(deviceId), 1);
+      const latest = list && list.length ? list[0] : null;
+      return res.status(200).json(latest);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+
+  // GET /readings/device/:deviceId?limit=100
+  getHistory = async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const limit = Number(req.query.limit || 100);
+      if (!deviceId) return res.status(400).json({ error: 'Missing deviceId' });
+      const list = await this.readingRepo.getLastReadings(Number(deviceId), limit);
+      return res.status(200).json(list);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+}
