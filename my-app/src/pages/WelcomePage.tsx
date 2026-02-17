@@ -1,4 +1,4 @@
-import { Navbar } from "../components/NavBar";
+import { Navbar } from "../components/Navbar";
 import { getStoredAuth } from "../api/auth";
 
 interface WelcomePageProps {

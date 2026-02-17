@@ -4,7 +4,7 @@ import { StatsPanel } from "../components/StatsPanel";
 import { ConsumptionChart } from "../components/ConsumptionChart";
 import { RecommendationsPanel } from "../components/RecommendationsPanel";
 import { Appliance } from "../types/appliance";
-import { Navbar } from "../components/NavBar";
+import { Navbar } from "../components/Navbar";
 import { User } from "../types/user";
 import { api } from "../api/client";
 import { applianceHighUsageThreshold } from "../config/constants";
