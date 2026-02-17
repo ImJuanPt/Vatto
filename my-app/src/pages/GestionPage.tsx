@@ -522,7 +522,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                                 if (!deviceNameInput) { alert('Ingresa un nombre'); return; }
                                 setCreatingDevice(true);
                                 try {
-                                  const res = await api.post<any>('/api/v1/devices', {
+                                  const res = await api.post<any>('/v1/devices', {
                                     locationId: addingDeviceLocationId,
                                     name: deviceNameInput,
                                     deviceType: deviceTypeInput || 'other',

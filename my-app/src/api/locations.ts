@@ -3,7 +3,7 @@ import { Location } from '../types/location';
 
 export async function getLocations(): Promise<Location[]> {
   try {
-    const res = await api.get<any>('/api/v1/locations');
+    const res = await api.get<any>('/v1/locations');
     if (Array.isArray(res)) return res.map(normalize);
     if (res && Array.isArray(res.data)) return res.data.map(normalize);
     throw new Error('Invalid locations response');
@@ -15,7 +15,7 @@ export async function getLocations(): Promise<Location[]> {
 
 export async function getLocationById(id: string | number): Promise<Location | null> {
   try {
-    const res = await api.get<any>(`/api/v1/locations/${id}`);
+    const res = await api.get<any>(`/v1/locations/${id}`);
     if (!res) return null;
     return normalize(res);
   } catch (err) {
@@ -30,7 +30,7 @@ export async function createLocation(name: string, address?: string, timezone?: 
     if (address) payload.address = address;
     if (timezone) payload.timezone = timezone;
     if (userId) payload.userId = userId;
-    const res = await api.post<any>('/api/v1/locations', payload);
+    const res = await api.post<any>('/v1/locations', payload);
     return normalize(res);
   } catch (err) {
     console.warn('createLocation failed', err);
@@ -40,7 +40,7 @@ export async function createLocation(name: string, address?: string, timezone?: 
 
 export async function deleteLocation(locationId: string | number): Promise<{ success: boolean; error?: string; deviceCount?: number }> {
   try {
-    const res = await api.del<any>(`/api/v1/locations/${locationId}`);
+    const res = await api.del<any>(`/v1/locations/${locationId}`);
     if (res && res.error) {
       return { success: false, error: res.message, deviceCount: res.deviceCount };
     }

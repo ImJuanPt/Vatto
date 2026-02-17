@@ -5,7 +5,7 @@ import api from './client';
  */
 export async function getDeviceMetrics(): Promise<Record<number, { monthlyKWh: number; usageHoursPerDay: number }>> {
   try {
-    const metrics = await api.get<any>('/api/v1/devices/metrics');
+    const metrics = await api.get<any>('/v1/devices/metrics');
     if (!metrics || typeof metrics !== 'object') {
       console.warn('Invalid metrics response');
       return {};
@@ -22,7 +22,7 @@ export async function getDeviceMetrics(): Promise<Record<number, { monthlyKWh: n
  */
 export async function getDailyUsage(): Promise<Record<number, number>> {
   try {
-    const usage = await api.get<any>('/api/v1/devices/daily-usage');
+    const usage = await api.get<any>('/v1/devices/daily-usage');
     if (!Array.isArray(usage)) {
       console.warn('Invalid daily usage response');
       return {};

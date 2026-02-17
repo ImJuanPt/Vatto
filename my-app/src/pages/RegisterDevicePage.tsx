@@ -61,7 +61,7 @@ export function RegisterDevicePage({ user, onLogout, onNavigate }: RegisterDevic
 
     try {
       // Call backend to create device
-      const newDevice = await api.post<any>('/api/v1/devices', {
+      const newDevice = await api.post<any>('/v1/devices', {
         locationId: selectedLocationId!,
         name: deviceName,
         deviceType: deviceType,

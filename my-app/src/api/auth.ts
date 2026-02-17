@@ -6,7 +6,7 @@ const STORAGE_LAST_ACTIVITY = 'auth_last_activity';
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function login(email: string, password: string) {
-  const res = await api.post<{ token: string; user: any }>('/api/v1/auth/login', { email, password });
+  const res = await api.post<{ token: string; user: any }>('/v1/auth/login', { email, password });
   api.setAuthToken(res.token);
   try {
     localStorage.setItem(STORAGE_TOKEN_KEY, res.token);
@@ -17,7 +17,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function register(email: string, fullName: string, password: string) {
-  const res = await api.post<any>('/api/v1/auth/register', { email, fullName, password });
+  const res = await api.post<any>('/v1/auth/register', { email, fullName, password });
   return res;
 }
 

@@ -16,12 +16,12 @@ async function tryEndpoints<T = any>(endpoints: string[]) {
 
 export async function getLatestReadingForDevice(deviceId: string | number): Promise<Reading | null> {
   const candidates = [
-    `/api/v1/readings/latest/${deviceId}`,
-    `/api/v1/readings/device/${deviceId}?limit=1000`,
-    `/api/v1/readings/latest?deviceId=${deviceId}`,
-    `/api/v1/readings?deviceId=${deviceId}`,
-    `/api/v1/devices/${deviceId}/readings/latest`,
-    `/api/v1/devices/${deviceId}/readings`,
+    `/v1/readings/latest/${deviceId}`,
+    `/v1/readings/device/${deviceId}?limit=1000`,
+    `/v1/readings/latest?deviceId=${deviceId}`,
+    `/v1/readings?deviceId=${deviceId}`,
+    `/v1/devices/${deviceId}/readings/latest`,
+    `/v1/devices/${deviceId}/readings`,
   ];
   try {
     const res = await tryEndpoints(candidates);
@@ -39,10 +39,10 @@ export async function getLatestReadingForDevice(deviceId: string | number): Prom
 
 export async function getReadingsForDevice(deviceId: string | number): Promise<Reading[]> {
   const candidates = [
-    `/api/v1/readings/device/${deviceId}?limit=1000`,
-    `/api/v1/readings?deviceId=${deviceId}`,
-    `/api/v1/readings?device_id=${deviceId}`,
-    `/api/v1/devices/${deviceId}/readings`,
+    `/v1/readings/device/${deviceId}?limit=1000`,
+    `/v1/readings?deviceId=${deviceId}`,
+    `/v1/readings?device_id=${deviceId}`,
+    `/v1/devices/${deviceId}/readings`,
   ];
   try {
     const res = await tryEndpoints(candidates);

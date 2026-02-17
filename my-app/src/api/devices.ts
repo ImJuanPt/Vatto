@@ -110,7 +110,7 @@ function mapDeviceToAppliance(d: any): Appliance {
 
 export async function getDevices(): Promise<Appliance[]> {
   try {
-    const devices = await api.get<any>('/api/v1/devices');
+    const devices = await api.get<any>('/v1/devices');
     // Accept either an array or a single device object (backend may return wrong shape)
     if (Array.isArray(devices)) return devices.map(mapDeviceToAppliance);
     if (devices && typeof devices === 'object' && devices.id !== undefined) {
@@ -129,7 +129,7 @@ export async function getDevices(): Promise<Appliance[]> {
 
 export async function getDeviceById(id: string): Promise<Appliance | null> {
   try {
-    const d = await api.get<any>(`/api/v1/devices/${id}`);
+    const d = await api.get<any>(`/v1/devices/${id}`);
     if (!d) return null;
     return mapDeviceToAppliance(d);
   } catch (err) {
@@ -141,7 +141,7 @@ export async function getDeviceById(id: string): Promise<Appliance | null> {
 
 export async function findDeviceByMac(mac: string): Promise<Appliance | null> {
   try {
-    const d = await api.get<any>(`/api/v1/devices/by-mac/${encodeURIComponent(mac)}`);
+    const d = await api.get<any>(`/v1/devices/by-mac/${encodeURIComponent(mac)}`);
     if (!d) return null;
     return mapDeviceToAppliance(d);
   } catch (err) {
@@ -152,7 +152,7 @@ export async function findDeviceByMac(mac: string): Promise<Appliance | null> {
 
 export async function updateDevice(id: string | number, payload: Partial<any>): Promise<Appliance | null> {
   try {
-    const res = await api.put<any>(`/api/v1/devices/${id}`, payload);
+    const res = await api.put<any>(`/v1/devices/${id}`, payload);
     if (!res) return null;
     return mapDeviceToAppliance(res);
   } catch (err) {
@@ -163,7 +163,7 @@ export async function updateDevice(id: string | number, payload: Partial<any>): 
 
 export async function moveDevice(deviceId: string | number, newLocationId: string | number): Promise<Appliance | null> {
   try {
-    const res = await api.post<any>(`/api/v1/devices/${deviceId}/move`, { newLocationId });
+    const res = await api.post<any>(`/v1/devices/${deviceId}/move`, { newLocationId });
     if (!res) return null;
     return mapDeviceToAppliance(res);
   } catch (err) {
@@ -174,7 +174,7 @@ export async function moveDevice(deviceId: string | number, newLocationId: strin
 
 export async function deleteDevice(deviceId: string | number): Promise<boolean> {
   try {
-    await api.del<any>(`/api/v1/devices/${deviceId}`);
+    await api.del<any>(`/v1/devices/${deviceId}`);
     return true;
   } catch (err) {
     console.warn('deleteDevice failed', err);
@@ -184,7 +184,7 @@ export async function deleteDevice(deviceId: string | number): Promise<boolean> 
 
 export async function renameDevice(deviceId: string | number, newName: string): Promise<Appliance | null> {
   try {
-    const res = await api.put<any>(`/api/v1/devices/${deviceId}`, { name: newName });
+    const res = await api.put<any>(`/v1/devices/${deviceId}`, { name: newName });
     if (!res) return null;
     return mapDeviceToAppliance(res);
   } catch (err) {
