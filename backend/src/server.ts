@@ -71,7 +71,7 @@ async function bootstrap() {
 
   new ReadingWorker(processReadingUseCase);
 
-  const readingController = new ReadingController(queueService, readingRepo);
+  const readingController = new ReadingController(queueService, readingRepo, deviceRepo);
   const deviceController = new DeviceController(processDeviceUseCase);
   const locationController = new LocationController(processLocationUseCase);
   const authController = new AuthController(processAuthUseCase);

@@ -99,6 +99,10 @@ export class PostgresDeviceRepository implements IDeviceRepository {
   }
 
   async delete(id: number): Promise<void> {
+    // Primero eliminar las lecturas asociadas al dispositivo
+    await pool.query(`DELETE FROM readings WHERE device_id = $1;`, [id]);
+    
+    // Luego eliminar el dispositivo
     const query = `DELETE FROM devices WHERE id = $1;`;
     await pool.query(query, [id]);
   }

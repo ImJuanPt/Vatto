@@ -1,9 +1,14 @@
 import { Request, Response } from "express";
 import { IQueueService } from "../../../domain/interfaces/IQueueService";
 import { IReadingRepository } from "../../../domain/repositories/IReadingRepository";
+import { IDeviceRepository } from "../../../domain/repositories/IDeviceRepository";
 
 export class ReadingController {
-  constructor(private queueService: IQueueService, private readingRepo: IReadingRepository) {}
+  constructor(
+    private queueService: IQueueService, 
+    private readingRepo: IReadingRepository,
+    private deviceRepo: IDeviceRepository
+  ) {}
 
   receiveReading = async (req: Request, res: Response) => {
     try {
@@ -12,6 +17,13 @@ export class ReadingController {
       // Allow powerWatts to be 0, just not undefined/null
       if (!readingData.deviceId || readingData.powerWatts == null) {
         return res.status(400).json({ error: "Missing data" });
+      }
+
+      // Validar que el dispositivo exista antes de encolar
+      const device = await this.deviceRepo.findById(readingData.deviceId);
+      if (!device) {
+        console.warn(`[ReadingController] Device ${readingData.deviceId} not found`);
+        return res.status(404).json({ error: "Device not found" });
       }
 
       await this.queueService.addJob("readings_queue", readingData);

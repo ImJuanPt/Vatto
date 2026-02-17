@@ -15,8 +15,8 @@ export class ProcessReadingUseCase {
     const device = await this.deviceRepo.findById(data.deviceId);
 
     if (!device) {
-      console.warn(`[ProcessReading] Dispositivo ID ${data.deviceId} no encontrado`);
-      return; 
+      console.warn(`[ProcessReading] Dispositivo ID ${data.deviceId} no encontrado (job ya encolado)`);
+      return; // Ya fue validado en el controller, esto es solo por seguridad
     }
 
     const readingDate = data.timestamp ? new Date(data.timestamp) : new Date();
