@@ -7,11 +7,72 @@ import { appliancesMock } from '../api/mockAppliances';
 function deviceTypeToCategory(type?: string): string {
   if (!type) return 'other';
   const t = String(type).toLowerCase();
-  if (['fridge', 'refrigerator', 'oven', 'stove', 'microwave', 'coffee_maker'].includes(t)) return 'kitchen';
-  if (['ac', 'heater', 'thermostat', 'aircon', 'climate'].includes(t)) return 'climate';
-  if (['washer', 'dryer', 'washing_machine', 'laundry'].includes(t)) return 'laundry';
-  if (['tv', 'console', 'speaker', 'entertainment', 'media'].includes(t)) return 'entertainment';
+  // Kitchen devices
+  if (['fridge', 'refrigerator', 'oven', 'stove', 'microwave', 'coffee_maker', 'dishwasher', 'blender', 'toaster'].includes(t)) return 'kitchen';
+  // Climate devices
+  if (['ac', 'heater', 'thermostat', 'aircon', 'climate', 'fan'].includes(t)) return 'climate';
+  // Laundry devices
+  if (['washer', 'dryer', 'washing_machine', 'laundry', 'iron'].includes(t)) return 'laundry';
+  // Entertainment devices
+  if (['tv', 'console', 'speaker', 'entertainment', 'media', 'projector'].includes(t)) return 'entertainment';
+  // Home devices
+  if (['lights', 'fridge_small', 'vacuum', 'printer', 'router', 'computer', 'laptop', 'monitor'].includes(t)) return 'home';
   return 'other';
+}
+
+// Map device types to Spanish labels
+export function getDeviceTypeLabel(type?: string): string {
+  if (!type) return 'Otro';
+  const typeMap: Record<string, string> = {
+    // Kitchen
+    'refrigerator': 'Refrigerador',
+    'fridge': 'Refrigerador',
+    'oven': 'Horno',
+    'microwave': 'Microondas',
+    'dishwasher': 'Lavavajillas',
+    'coffee_maker': 'Cafetera',
+    'blender': 'Licuadora',
+    'toaster': 'Tostadora',
+    // Climate
+    'ac': 'Aire Acondicionado',
+    'heater': 'Calefactor',
+    'fan': 'Ventilador',
+    'thermostat': 'Termostato',
+    // Laundry
+    'washer': 'Lavadora',
+    'dryer': 'Secadora',
+    'iron': 'Plancha',
+    // Entertainment
+    'tv': 'Televisor',
+    'speaker': 'Parlante',
+    'console': 'Consola',
+    'projector': 'Proyector',
+    // Home/Other
+    'lights': 'Luces',
+    'fridge_small': 'Mini Refrigerador',
+    'vacuum': 'Aspiradora',
+    'printer': 'Impresora',
+    'router': 'Router',
+    'computer': 'Computadora',
+    'laptop': 'Laptop',
+    'monitor': 'Monitor',
+    'other': 'Otro',
+  };
+  return typeMap[type.toLowerCase()] || type;
+}
+
+// Map categories to Spanish labels
+export function getCategoryLabel(category?: string): string {
+  if (!category) return 'Otro';
+  const categoryMap: Record<string, string> = {
+    'kitchen': 'Cocina',
+    'climate': 'Clima',
+    'laundry': 'Lavandería',
+    'entertainment': 'Entretenimiento',
+    'home': 'Hogar',
+    'other': 'Otro',
+  };
+  return categoryMap[category.toLowerCase()] || category;
 }
 
 function mapDeviceToAppliance(d: any): Appliance {

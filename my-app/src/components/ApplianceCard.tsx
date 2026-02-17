@@ -1,5 +1,6 @@
 import { LucideAlertTriangle, LucidePlug } from "lucide-react";
 import { Appliance } from "../types/appliance";
+import { getCategoryLabel } from "../api/devices";
 
 interface ApplianceCardProps {
   appliance: Appliance;
@@ -11,6 +12,7 @@ const categoryColors: Record<Appliance["category"], string> = {
   climate: "bg-sky-400/20 text-sky-100 border border-sky-300/40",
   laundry: "bg-violet-400/20 text-violet-100 border border-violet-300/40",
   entertainment: "bg-rose-400/20 text-rose-100 border border-rose-300/40",
+  home: "bg-emerald-400/20 text-emerald-100 border border-emerald-300/40",
   other: "bg-slate-400/20 text-slate-100 border border-slate-300/40",
 };
 
@@ -28,7 +30,7 @@ export function ApplianceCard({ appliance, highUsageThreshold }: ApplianceCardPr
               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${categoryColors[appliance.category]}`}
             >
               <LucidePlug className="h-3.5 w-3.5" />
-              {appliance.category}
+              {getCategoryLabel(appliance.category)}
             </span>
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${

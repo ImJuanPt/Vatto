@@ -13,9 +13,10 @@ type FiltersToolbarProps = {
 const FILTERS: FilterOption[] = [
   { id: "all", label: "Todos" },
   { id: "kitchen", label: "Cocina" },
-  { id: "climate", label: "Climatización" },
+  { id: "climate", label: "Clima" },
   { id: "laundry", label: "Lavandería" },
   { id: "entertainment", label: "Entretenimiento" },
+  { id: "home", label: "Hogar" },
   { id: "other", label: "Otros" },
 ];
 

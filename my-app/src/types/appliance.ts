@@ -6,7 +6,7 @@ export interface ConsumptionPoint {
 export interface Appliance {
   id: string;
   name: string;
-  category: "kitchen" | "climate" | "laundry" | "entertainment" | "other" | string;
+  category: "kitchen" | "climate" | "laundry" | "entertainment" | "home" | "other" | string;
   typicalWattage: number;
   monthlyKWh: number;
   usageHoursPerDay: number;
