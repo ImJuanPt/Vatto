@@ -8,3 +8,4 @@ export interface CreateReadingDTO {
   frequency?: number;
   powerFactor?: number;
   timestamp?: string;
+}
