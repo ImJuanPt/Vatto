@@ -329,20 +329,24 @@ export class PostgresDeviceRepository implements IDeviceRepository {
 
   /**
    * Obtiene el estado actual (ON/OFF) de cada dispositivo basado en su última lectura
-   * Si power_watts > 0 → ON, si power_watts = 0 → OFF
+   * Si power_watts > 0 Y la lectura es reciente (< 5 min) → ON
+   * Si no hay lectura reciente o power_watts = 0 → OFF
    */
   async getCurrentStateForAllDevices(): Promise<{ device_id: number; current_state: string }[]> {
     const query = `
       WITH latest_readings AS (
         SELECT DISTINCT ON (device_id)
           device_id,
-          power_watts
+          power_watts,
+          time
         FROM readings
         ORDER BY device_id, time DESC
       )
       SELECT
         d.id as device_id,
         CASE 
+          WHEN lr.time IS NULL THEN 'off'
+          WHEN lr.time < NOW() - INTERVAL '5 minutes' THEN 'off'
           WHEN lr.power_watts > 0 THEN 'on'
           ELSE 'off'
         END as current_state

@@ -460,20 +460,55 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                           <input
                             value={deviceNameInput}
                             onChange={(e) => setDeviceNameInput(e.target.value)}
-                            className="w-full mb-3 rounded px-3 py-2"
+                            className="w-full mb-3 rounded px-3 py-2 bg-slate-800 text-white"
                             placeholder="Ej: Refrigerador"
                           />
                           <label className="text-sm">Tipo</label>
                           <select
                             value={deviceTypeInput}
                             onChange={(e) => setDeviceTypeInput(e.target.value)}
-                            className="w-full mb-3 rounded px-3 py-2"
+                            className="w-full mb-3 rounded px-3 py-2 bg-slate-800 text-white border border-slate-600 focus:outline-none focus:border-emerald-500"
                           >
-                            <option value="other">Other</option>
-                            <option value="fridge">Fridge</option>
-                            <option value="ac">AC</option>
-                            <option value="tv">TV</option>
-                            <option value="washer">Washer</option>
+                            <option value="">Selecciona un tipo</option>
+                            <optgroup label="Cocina">
+                              <option value="refrigerator">Refrigerador</option>
+                              <option value="oven">Horno</option>
+                              <option value="microwave">Microondas</option>
+                              <option value="dishwasher">Lavavajillas</option>
+                              <option value="coffee_maker">Cafetera</option>
+                              <option value="blender">Licuadora</option>
+                              <option value="toaster">Tostadora</option>
+                            </optgroup>
+                            <optgroup label="Clima">
+                              <option value="ac">Aire Acondicionado</option>
+                              <option value="heater">Calefactor</option>
+                              <option value="fan">Ventilador</option>
+                              <option value="thermostat">Termostato</option>
+                            </optgroup>
+                            <optgroup label="Lavandería">
+                              <option value="washer">Lavadora</option>
+                              <option value="dryer">Secadora</option>
+                              <option value="iron">Plancha</option>
+                            </optgroup>
+                            <optgroup label="Entretenimiento">
+                              <option value="tv">Televisor</option>
+                              <option value="speaker">Parlante</option>
+                              <option value="console">Consola de Videojuegos</option>
+                              <option value="projector">Proyector</option>
+                            </optgroup>
+                            <optgroup label="Hogar">
+                              <option value="lights">Luces</option>
+                              <option value="fridge_small">Mini Refrigerador</option>
+                              <option value="vacuum">Aspiradora</option>
+                              <option value="printer">Impresora</option>
+                              <option value="router">Router</option>
+                              <option value="computer">Computadora</option>
+                              <option value="laptop">Laptop</option>
+                              <option value="monitor">Monitor</option>
+                            </optgroup>
+                            <optgroup label="Otro">
+                              <option value="other">Otro</option>
+                            </optgroup>
                           </select>
                           <div className="flex gap-2 justify-end">
                             <button
@@ -535,7 +570,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                   <input
                     value={deviceNameInput}
                     onChange={(e) => setDeviceNameInput(e.target.value)}
-                    className="w-full mb-3 rounded px-3 py-2"
+                    className="w-full mb-3 rounded px-3 py-2 bg-slate-800 text-white"
                   />
                   <label className="text-sm">Tipo</label>
                   <select
