@@ -307,6 +307,24 @@ export class PostgresDeviceRepository implements IDeviceRepository {
     );
   }
 
+  // Find device by MAC address
+  async findByMacAddress(macAddress: string): Promise<Device | null> {
+    const query = `SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active, pairing_code FROM devices WHERE mac_address = $1 LIMIT 1`;
+    const res = await pool.query(query, [macAddress]);
+    if (res.rows.length === 0) return null;
+    const row = res.rows[0];
+    return new Device(
+      row.id,
+      row.location_id,
+      row.name,
+      row.device_type,
+      row.max_watts_threshold,
+      row.mac_address,
+      row.is_active,
+      row.pairing_code || null
+    );
+  }
+
   async updateMacAddress(deviceId: number, macAddress: string): Promise<boolean> {
     const query = `UPDATE devices SET mac_address = $1 WHERE id = $2`;
     const res = await pool.query(query, [macAddress, deviceId]);

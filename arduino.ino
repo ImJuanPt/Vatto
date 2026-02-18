@@ -8,7 +8,7 @@
 // ============== CONFIGURACIÓN GENERAL ==============
 #define BACKEND_URL_BASE          "http://217.71.203.129/api/v1"
 #define BACKEND_URL_READINGS      "http://217.71.203.129/api/v1/readings"
-#define AP_SSID                   "PZEM-Setup"
+#define AP_SSID                   "Vatto-Setup"
 #define AP_PASSWORD               "12345678"
 #define RXD2                      16
 #define TXD2                      17
@@ -722,55 +722,69 @@ bool pairDevice(String pairingCode) {
   String payload = "{\"pairingCode\":\"" + pairingCode + "\",\"macAddress\":\"" + macAddress + "\"}";
 
   logMessage("PAIR", LOG_INFO, "POST %s", url.c_str());
-  logMessage("PAIR", LOG_INFO, "Code=%s, MAC=%s", pairingCode.c_str(), macAddress.c_str());
+  logMessage("PAIR", LOG_INFO, "Payload: %s", payload.c_str());
 
   int httpCode = http.POST(payload);
   String response = http.getString();
 
-  if (httpCode == 200) {
-    logMessage("PAIR", LOG_SUCCESS, "HTTP 200 - Parsing response");
-    logMessage("PAIR", LOG_INFO, "Response: %s", response.c_str());
+  logMessage("PAIR", LOG_INFO, "HTTP Code: %d", httpCode);
+  logMessage("PAIR", LOG_INFO, "Response length: %d bytes", response.length());
+  logMessage("PAIR", LOG_INFO, "Response: %s", response.c_str());
 
-    int deviceIdPos = response.indexOf("\"deviceId\":");
+  bool success = false;
+
+  if (httpCode == 200 || httpCode == 201) {
+    logMessage("PAIR", LOG_SUCCESS, "HTTP %d - Parsing response", httpCode);
+
+    // Buscar "deviceId" en la respuesta
+    int deviceIdPos = response.indexOf("deviceId");
     if (deviceIdPos != -1) {
+      // Buscar el número después de "deviceId":
       int colonPos = response.indexOf(":", deviceIdPos);
-      int endPos = response.indexOf(",", colonPos);
-      if (endPos == -1) endPos = response.indexOf("}", colonPos);
+      if (colonPos != -1) {
+        int endPos = response.indexOf(",", colonPos);
+        if (endPos == -1) endPos = response.indexOf("}", colonPos);
+        if (endPos == -1) endPos = response.length();
 
-      String deviceIdStr = response.substring(colonPos + 1, endPos);
-      deviceIdStr.trim();
-      logMessage("PAIR", LOG_INFO, "Parsed deviceIdStr: '%s'", deviceIdStr.c_str());
-      
-      int newDeviceId = deviceIdStr.toInt();
-      logMessage("PAIR", LOG_INFO, "Converted to int: %d", newDeviceId);
+        String deviceIdStr = response.substring(colonPos + 1, endPos);
+        deviceIdStr.trim();
+        // Remove quotes if present
+        if (deviceIdStr.startsWith("\"")) deviceIdStr = deviceIdStr.substring(1);
+        if (deviceIdStr.endsWith("\"")) deviceIdStr = deviceIdStr.substring(0, deviceIdStr.length() - 1);
 
-      if (newDeviceId > 0) {
-        deviceId = newDeviceId;
-        logMessage("PAIR", LOG_SUCCESS, "DeviceId obtained: %d", deviceId);
-        http.end();
-        return true;
+        logMessage("PAIR", LOG_INFO, "Extracted deviceIdStr: '%s'", deviceIdStr.c_str());
+        
+        int newDeviceId = deviceIdStr.toInt();
+        logMessage("PAIR", LOG_INFO, "Converted to int: %d", newDeviceId);
+
+        if (newDeviceId > 0) {
+          deviceId = newDeviceId;
+          logMessage("PAIR", LOG_SUCCESS, "DeviceId obtained: %d", deviceId);
+          success = true;
+        } else {
+          logMessage("PAIR", LOG_ERROR, "Parsed deviceId is not positive: %d", newDeviceId);
+        }
       } else {
-        logMessage("PAIR", LOG_ERROR, "Parsed deviceId is not positive: %d", newDeviceId);
+        logMessage("PAIR", LOG_ERROR, "Could not find colon after deviceId");
       }
     } else {
-      logMessage("PAIR", LOG_ERROR, "Could not find \"deviceId\" in response");
+      logMessage("PAIR", LOG_ERROR, "Could not find 'deviceId' in response");
     }
-    logMessage("PAIR", LOG_ERROR, "Valid response but no deviceId found");
   } else if (httpCode == 400) {
     logMessage("PAIR", LOG_ERROR, "HTTP 400 - Invalid pairing code or already used");
   } else if (httpCode == 404) {
-    logMessage("PAIR", LOG_ERROR, "HTTP 404 - Endpoint not found. Backend updated?");
+    logMessage("PAIR", LOG_ERROR, "HTTP 404 - Invalid or expired pairing code");
+    logMessage("PAIR", LOG_INFO, "Backend response: %s", response.c_str());
   } else if (httpCode == 500) {
-    logMessage("PAIR", LOG_ERROR, "HTTP 500 - Server error. Check backend logs");
+    logMessage("PAIR", LOG_ERROR, "HTTP 500 - Server error");
   } else if (httpCode == -1) {
-    logMessage("PAIR", LOG_ERROR, "HTTP -1 - Connection error");
-    logMessage("PAIR", LOG_ERROR, "Check: BACKEND_URL, firewall, server running");
+    logMessage("PAIR", LOG_ERROR, "HTTP -1 - Connection error (timeout or network issue)");
   } else {
     logMessage("PAIR", LOG_ERROR, "HTTP %d - Unexpected error", httpCode);
   }
 
   http.end();
-  return false;
+  return success;
 }
 
 // ============== LECTURAS ==============
@@ -819,12 +833,11 @@ bool sendReading(float voltaje, float corriente, float potencia,
   String payload = "{";
   payload += "\"deviceId\":" + String(deviceId) + ",";
   payload += "\"voltage\":" + String(voltaje, 2) + ",";
-  payload += "\"current\":" + String(corriente, 3) + ",";
+  payload += "\"currentAmps\":" + String(corriente, 3) + ",";
   payload += "\"powerWatts\":" + String(potencia, 2) + ",";
-  payload += "\"energy\":" + String(energia, 2) + ",";
+  payload += "\"energyKwh\":" + String(energia, 2) + ",";
   payload += "\"frequency\":" + String(frecuencia, 2) + ",";
-  payload += "\"powerFactor\":" + String(pf, 2) + ",";
-  payload += "\"timestamp\":\"" + getISO8601Time() + "\"";
+  payload += "\"powerFactor\":" + String(pf, 2);
   payload += "}";
 
   logMessage("SEND", LOG_INFO, "Payload: %s", payload.c_str());

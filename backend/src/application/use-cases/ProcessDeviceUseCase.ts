@@ -210,9 +210,21 @@ export class ProcessDeviceUseCase {
       // El código se genera cuando el usuario crea un device en la app
       // y se almacena temporalmente (ej: 30 minutos de validez)
       
-      const device = await (this.deviceRepo as any).findByPairingCode(pairingCode);
+      let device = await (this.deviceRepo as any).findByPairingCode(pairingCode);
       
+      // Si no se encuentra por pairing code, buscar por MAC address
+      // (podría ser un dispositivo que ya se emparejó previamente)
       if (!device) {
+        device = await (this.deviceRepo as any).findByMacAddress(macAddress);
+        
+        if (device) {
+          console.log(`[Pairing] Device ${device.id} already paired with MAC ${macAddress}`);
+          return {
+            deviceId: device.id,
+            message: "Device already paired"
+          };
+        }
+        
         console.warn(`[Pairing] Invalid pairing code: ${pairingCode}`);
         return null;
       }
