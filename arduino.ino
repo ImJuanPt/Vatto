@@ -757,7 +757,7 @@ bool pairDevice(String pairingCode) {
 
         String deviceIdStr = response.substring(colonPos + 1, endPos);
         deviceIdStr.trim();
-        // Remove quotes if present
+        // Remover comillas si estan presentes
         if (deviceIdStr.startsWith("\"")) deviceIdStr = deviceIdStr.substring(1);
         if (deviceIdStr.endsWith("\"")) deviceIdStr = deviceIdStr.substring(0, deviceIdStr.length() - 1);
 

@@ -93,7 +93,7 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
 
   useEffect(() => {
     if (!applianceId) return;
-    // Fetch latest reading and history to compute daily stats
+    // Obtener ultima lectura e historial para calcular estadisticas diarias
     let mounted = true;
     (async () => {
       try {
@@ -138,9 +138,9 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
       if (p > peakWattage) peakWattage = p;
       if (i < todays.length - 1) {
         const next = todays[i + 1];
-        const dt = (new Date(next.time).getTime() - new Date(cur.time).getTime()) / 1000; // seconds
+        const dt = (new Date(next.time).getTime() - new Date(cur.time).getTime()) / 1000; // segundos
         if (dt > 0) {
-          // trapezoid integration for energy (kWh)
+          // integracion trapezoidal para energia (kWh)
           const pNext = next.powerWatts ?? p;
           const avgW = (p + pNext) / 2;
           totalKwh += (avgW * (dt / 3600)) / 1000;
@@ -149,7 +149,7 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
       }
     }
 
-    // If we only have one reading, try to use energyKwh directly
+    // Si solo tenemos una lectura, intentar usar energyKwh directamente
     if (todays.length === 1 && todays[0].energyKwh) {
       totalKwh = todays[0].energyKwh as number;
     }
@@ -356,7 +356,7 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
     const unsub = subscribeToDevice(applianceId, {
       onAlert: (data) => {
         console.info('Socket alert', data);
-        // could show a UI toast — for now we console.log and update description
+        // podria mostrar un toast en la UI - por ahora solo usamos console.log y actualizamos la descripcion
       },
       onReading: (reading) => {
         console.info('Realtime reading', reading);

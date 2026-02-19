@@ -47,7 +47,7 @@ export async function createLocation(name: string, address?: string, timezone?: 
     console.error('[createLocation] Error response:', err.response);
     console.error('[createLocation] Error status:', err.response?.status);
     console.error('[createLocation] Error data:', err.response?.data);
-    throw err; // Re-throw para que el componente pueda manejar el error
+    throw err; // Re-lanzar para que el componente pueda manejar el error
   }
 }
 

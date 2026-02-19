@@ -2,29 +2,29 @@ import api from './client';
 import { Appliance } from '../types/appliance';
 import { appliancesMock } from '../api/mockAppliances';
 
-// Extended mapping: prefer snake_case fields from backend
+// Mapeo extendido: preferir campos en snake_case del backend
 
 function deviceTypeToCategory(type?: string): string {
   if (!type) return 'other';
   const t = String(type).toLowerCase();
-  // Kitchen devices
+  // Dispositivos de cocina
   if (['fridge', 'refrigerator', 'oven', 'stove', 'microwave', 'coffee_maker', 'dishwasher', 'blender', 'toaster'].includes(t)) return 'kitchen';
-  // Climate devices
+  // Dispositivos de clima
   if (['ac', 'heater', 'thermostat', 'aircon', 'climate', 'fan'].includes(t)) return 'climate';
-  // Laundry devices
+  // Dispositivos de lavanderia
   if (['washer', 'dryer', 'washing_machine', 'laundry', 'iron'].includes(t)) return 'laundry';
-  // Entertainment devices
+  // Dispositivos de entretenimiento
   if (['tv', 'console', 'speaker', 'entertainment', 'media', 'projector'].includes(t)) return 'entertainment';
-  // Home devices
+  // Dispositivos del hogar
   if (['lights', 'fridge_small', 'vacuum', 'printer', 'router', 'computer', 'laptop', 'monitor'].includes(t)) return 'home';
   return 'other';
 }
 
-// Map device types to Spanish labels
+// Mapear tipos de dispositivo a etiquetas en español
 export function getDeviceTypeLabel(type?: string): string {
   if (!type) return 'Otro';
   const typeMap: Record<string, string> = {
-    // Kitchen
+    // Cocina
     'refrigerator': 'Refrigerador',
     'fridge': 'Refrigerador',
     'oven': 'Horno',
@@ -33,21 +33,21 @@ export function getDeviceTypeLabel(type?: string): string {
     'coffee_maker': 'Cafetera',
     'blender': 'Licuadora',
     'toaster': 'Tostadora',
-    // Climate
+    // Clima
     'ac': 'Aire Acondicionado',
     'heater': 'Calefactor',
     'fan': 'Ventilador',
     'thermostat': 'Termostato',
-    // Laundry
+    // Lavanderia
     'washer': 'Lavadora',
     'dryer': 'Secadora',
     'iron': 'Plancha',
-    // Entertainment
+    // Entretenimiento
     'tv': 'Televisor',
     'speaker': 'Parlante',
     'console': 'Consola',
     'projector': 'Proyector',
-    // Home/Other
+    // Hogar/Otros
     'lights': 'Luces',
     'fridge_small': 'Mini Refrigerador',
     'vacuum': 'Aspiradora',
@@ -61,7 +61,7 @@ export function getDeviceTypeLabel(type?: string): string {
   return typeMap[type.toLowerCase()] || type;
 }
 
-// Map categories to Spanish labels
+// Mapear categorias a etiquetas en español
 export function getCategoryLabel(category?: string): string {
   if (!category) return 'Otro';
   const categoryMap: Record<string, string> = {
@@ -79,7 +79,7 @@ function mapDeviceToAppliance(d: any): Appliance {
   const monthlyKWh = Number(d.monthlyKWh ?? d.monthly_kwh ?? d.energy_kwh ?? 0);
   const usageHoursPerDay = Number(d.usageHoursPerDay ?? d.usage_hours_per_day ?? d.active_hours ?? 0);
   
-  // Debug: log para verificar qué está llegando
+  // Log de depuracion: para verificar que esta llegando
   if (d.id) {
     console.log(`Device ${d.id}: monthlyKWh=${monthlyKWh}, usageHoursPerDay=${usageHoursPerDay}, raw:`, d);
   }
@@ -95,8 +95,8 @@ function mapDeviceToAppliance(d: any): Appliance {
     description: d.description ?? d.device_type ?? '',
     monthlyHistory: d.monthlyHistory ?? d.monthly_history ?? [],
     weeklyUsage: d.weeklyUsage ?? d.weekly_usage ?? [],
-    // extra fields mapped into appliance's description or as properties if needed
-    // we'll attach backend-specific fields under a `_meta` key to avoid breaking UI
+    // campos adicionales mapeados en la descripcion del dispositivo o como propiedades si es necesario
+    // adjuntamos campos especificos del backend bajo una clave `_meta` para evitar romper la UI
     // @ts-ignore
     _meta: {
       locationId: d.location_id ?? d.locationId,
@@ -111,12 +111,12 @@ function mapDeviceToAppliance(d: any): Appliance {
 export async function getDevices(): Promise<Appliance[]> {
   try {
     const devices = await api.get<any>('/v1/devices');
-    // Accept either an array or a single device object (backend may return wrong shape)
+    // Aceptar un array o un objeto de dispositivo individual (el backend puede retornar formato incorrecto)
     if (Array.isArray(devices)) return devices.map(mapDeviceToAppliance);
     if (devices && typeof devices === 'object' && devices.id !== undefined) {
       return [mapDeviceToAppliance(devices)];
     }
-    // Support wrapped responses like { data: [...] }
+    // Soportar respuestas envueltas como { data: [...] }
     if (devices && Array.isArray((devices as any).data)) {
       return (devices as any).data.map(mapDeviceToAppliance);
     }

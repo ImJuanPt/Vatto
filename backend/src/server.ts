@@ -42,7 +42,7 @@ async function bootstrap() {
     app.use(
       cors({
         origin: (origin, callback) => {
-          // Allow requests with no origin (curl, native apps)
+          // Permitir peticiones sin origen (curl, apps nativas)
           if (!origin) return callback(null, true);
           if (corsOrigins.includes(origin)) return callback(null, true);
           return callback(new Error('CORS origin not allowed'));
@@ -80,10 +80,10 @@ async function bootstrap() {
   const deviceCleanupScheduler = new DeviceCleanupScheduler(deviceRepo);
   deviceCleanupScheduler.start();
 
-  // Expose pairing endpoint without auth so ESP32 devices can call it during setup
+  // Exponer endpoint de emparejamiento sin autenticacion para que dispositivos ESP32 puedan llamarlo durante configuracion
   app.post('/api/v1/devices/pair', (req, res) => deviceController.pair(req as any, res as any));
 
-  // Expose readings endpoint without auth so ESP32 devices can send sensor data
+  // Exponer endpoint de lecturas sin autenticacion para que dispositivos ESP32 puedan enviar datos de sensores
   app.post('/api/v1/readings', (req, res) => readingController.receiveReading(req as any, res as any));
 
   app.use('/api/v1/auth', createAuthRoutes(authController));

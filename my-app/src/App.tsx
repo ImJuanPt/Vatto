@@ -18,7 +18,7 @@ function App() {
   useEffect(() => {
     const stored = authService.getStoredAuth();
     if (stored.token) {
-      // check inactivity
+      // verificar inactividad
       if (authService.isSessionExpired()) {
         authService.logout();
         setIsAuthenticated(false);
@@ -30,20 +30,20 @@ function App() {
       }
     }
 
-    // touch session on user interaction
+    // actualizar sesion en interaccion del usuario
     const touch = () => authService.touchSession();
     window.addEventListener('mousemove', touch);
     window.addEventListener('keydown', touch);
     window.addEventListener('click', touch);
 
-    // periodic check for inactivity
+    // verificacion periodica de inactividad
     const interval = setInterval(() => {
       if (authService.isSessionExpired()) {
         authService.logout();
         setIsAuthenticated(false);
         setUser(null);
       }
-    }, 30 * 1000); // check every 30s
+    }, 30 * 1000); // verificar cada 30s
 
     setAuthReady(true);
 

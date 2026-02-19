@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Proxy all API requests to backend (keeps same path, e.g. /api/v1/devices)
+      // Redirigir todas las peticiones API al backend (mantiene la misma ruta, ej. /api/v1/devices)
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,

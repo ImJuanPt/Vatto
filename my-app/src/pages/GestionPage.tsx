@@ -99,7 +99,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
 
   const hasNoResults = filteredAppliances.length === 0;
 
-  // When a category filter is active, only show locations that have matching devices
+  // Cuando un filtro de categoria esta activo, solo mostrar ubicaciones que tengan dispositivos coincidentes
   const visibleLocations =
     categoryFilter === "all"
       ? locations
@@ -540,7 +540,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                                     deviceType: deviceTypeInput || 'other',
                                     maxWattsThreshold: 1000,
                                   });
-                                  // prefer backend pairingCode, otherwise generate locally
+                                  // preferir pairingCode del backend, de lo contrario generar localmente
                                   const code = res?.pairingCode || String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
                                   setPairingCodeShown(code);
                                 } catch (err) {

@@ -4,7 +4,6 @@ import { StatsPanel } from "../components/StatsPanel";
 import { ConsumptionChart } from "../components/ConsumptionChart";
 import { RecommendationsPanel } from "../components/RecommendationsPanel";
 import { Appliance } from "../types/appliance";
-import { Navbar } from "../components/Navbar";
 import { User } from "../types/user";
 import { api } from "../api/client";
 import { applianceHighUsageThreshold } from "../config/constants";
@@ -28,17 +27,17 @@ export function SummaryPage({ user, onLogout }: SummaryPageProps) {
         const list = (await mod.getDevices()) as Appliance[];
         if (!mounted) return;
 
-        // For each appliance, try to fetch readings and compute monthlyKWh and usageHoursPerDay
+        // Para cada dispositivo, intentar obtener lecturas y calcular monthlyKWh y usageHoursPerDay
         const enriched = await Promise.all(
           list.map(async (ap) => {
             try {
-              // If the appliance already has monthlyKWh from backend, use that
+              // Si el dispositivo ya tiene monthlyKWh del backend, usar ese
               if (ap.monthlyKWh > 0 || ap.usageHoursPerDay > 0) {
                 console.log(`[SummaryPage] Using backend data for ${ap.name}: monthlyKWh=${ap.monthlyKWh}, usageHoursPerDay=${ap.usageHoursPerDay}`);
                 return ap;
               }
 
-              // Otherwise, fetch readings and compute
+              // De lo contrario, obtener lecturas y calcular
               const readings: Reading[] = await getReadingsForDevice(ap.id);
               const totalKwh = computeKwhFromReadings(readings, 30);
               const usageHours = computeActiveHours(readings, 30);
@@ -64,7 +63,7 @@ export function SummaryPage({ user, onLogout }: SummaryPageProps) {
   function computeKwhFromReadings(readings: Reading[], days = 30): number {
     if (!readings || readings.length === 0) return 0;
     const cutoff = Date.now() - days * 24 * 3600 * 1000;
-    // If readings include energyKwh values, sum those within cutoff.
+    // Si las lecturas incluyen valores energyKwh, sumar aquellos dentro del rango.
     if (readings.some((r) => typeof r.energyKwh === 'number')) {
       const total = readings.reduce((sum, r) => {
         const t = new Date(r.time).getTime();
