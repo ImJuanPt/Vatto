@@ -108,12 +108,16 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
         );
 
   const refreshData = useCallback(async () => {
+    console.log('[GestionPage] refreshData started...');
     setLoading(true);
     try {
       const devs = await getDevices();
       const locs = await getLocations();
+      console.log('[GestionPage] Got', devs.length, 'devices and', locs.length, 'locations');
+      console.log('[GestionPage] Locations:', locs);
       setAppliances(devs as any);
       setLocations(locs);
+      console.log('[GestionPage] State updated');
     } catch (err) {
       console.warn("refreshData failed", err);
     } finally {
@@ -123,18 +127,26 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
 
   async function handleCreateLocation() {
     if (!newLocationName.trim()) return;
-    const created = await createLocation(
-      newLocationName.trim(),
-      newLocationAddress.trim(),
-      newLocationTimezone.trim(),
-      user?.id ? Number(user.id) : undefined
-    );
-    if (created) {
-      setShowCreateLocation(false);
-      setNewLocationName("");
-      setNewLocationAddress("");
-      setNewLocationTimezone("");
-      await refreshData();
+    try {
+      const created = await createLocation(
+        newLocationName.trim(),
+        newLocationAddress.trim(),
+        newLocationTimezone.trim(),
+        user?.id ? Number(user.id) : undefined
+      );
+      if (created) {
+        setShowCreateLocation(false);
+        setNewLocationName("");
+        setNewLocationAddress("");
+        setNewLocationTimezone("");
+        await refreshData();
+      } else {
+        alert('Error: No se pudo crear la ubicación');
+      }
+    } catch (err: any) {
+      console.error('[GestionPage] Create location error:', err);
+      const errorMsg = err.response?.data?.error || err.message || 'Error desconocido';
+      alert(`Error al crear ubicación: ${errorMsg}`);
     }
   }
 
@@ -247,9 +259,9 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-10 text-center text-sm text-emerald-100">
               Cargando aparatos...
             </div>
-          ) : hasNoResults ? (
+          ) : visibleLocations.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-10 text-center text-sm text-emerald-100">
-              No hay aparatos en esta categoría por ahora.
+              No hay ubicaciones creadas. Crea una ubicación para comenzar.
             </div>
           ) : (
             <div className="mt-6 space-y-6">

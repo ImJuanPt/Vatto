@@ -731,6 +731,15 @@ bool pairDevice(String pairingCode) {
   logMessage("PAIR", LOG_INFO, "Response length: %d bytes", response.length());
   logMessage("PAIR", LOG_INFO, "Response: %s", response.c_str());
 
+  // Debug: mostrar cada carácter en hex para ver si hay caracteres ocultos
+  if (httpCode != 200 && httpCode != 201 && response.length() < 200) {
+    Serial.print("[PAIR] Response HEX: ");
+    for (int i = 0; i < response.length(); i++) {
+      Serial.printf("%02X ", (unsigned char)response[i]);
+    }
+    Serial.println();
+  }
+
   bool success = false;
 
   if (httpCode == 200 || httpCode == 201) {

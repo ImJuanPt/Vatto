@@ -19,7 +19,13 @@ export class ProcessAuthUseCase {
 
     const savedUser = await this.userRepo.save(newUser);
 
-    return savedUser.toPublicProfile();
+    // Generar token automáticamente después del registro (auto-login)
+    const token = TokenService.generate({ id: savedUser.id, email: savedUser.email });
+
+    return {
+      token,
+      user: savedUser.toPublicProfile()
+    };
   }
 
   async login(data: LoginDTO) {

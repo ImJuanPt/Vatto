@@ -3,12 +3,20 @@ import { Location } from '../types/location';
 
 export async function getLocations(): Promise<Location[]> {
   try {
+    console.log('[getLocations] Fetching locations...');
     const res = await api.get<any>('/v1/locations');
-    if (Array.isArray(res)) return res.map(normalize);
-    if (res && Array.isArray(res.data)) return res.data.map(normalize);
+    console.log('[getLocations] Raw response:', res);
+    if (Array.isArray(res)) {
+      console.log('[getLocations] Found', res.length, 'locations:', res);
+      return res.map(normalize);
+    }
+    if (res && Array.isArray(res.data)) {
+      console.log('[getLocations] Found', res.data.length, 'locations in .data:', res.data);
+      return res.data.map(normalize);
+    }
     throw new Error('Invalid locations response');
   } catch (err) {
-    console.warn('getLocations failed', err);
+    console.error('[getLocations] Error:', err);
     return [];
   }
 }
@@ -30,11 +38,16 @@ export async function createLocation(name: string, address?: string, timezone?: 
     if (address) payload.address = address;
     if (timezone) payload.timezone = timezone;
     if (userId) payload.userId = userId;
+    console.log('[createLocation] Sending payload:', payload);
     const res = await api.post<any>('/v1/locations', payload);
+    console.log('[createLocation] Response:', res);
     return normalize(res);
-  } catch (err) {
-    console.warn('createLocation failed', err);
-    return null;
+  } catch (err: any) {
+    console.error('[createLocation] Error:', err);
+    console.error('[createLocation] Error response:', err.response);
+    console.error('[createLocation] Error status:', err.response?.status);
+    console.error('[createLocation] Error data:', err.response?.data);
+    throw err; // Re-throw para que el componente pueda manejar el error
   }
 }
 

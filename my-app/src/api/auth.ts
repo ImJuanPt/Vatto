@@ -17,7 +17,18 @@ export async function login(email: string, password: string) {
 }
 
 export async function register(email: string, fullName: string, password: string) {
-  const res = await api.post<any>('/v1/auth/register', { email, fullName, password });
+  const res = await api.post<{ token: string; user: any }>('/v1/auth/register', { email, fullName, password });
+  
+  // Guardar token y usuario automáticamente después del registro
+  if (res.token) {
+    api.setAuthToken(res.token);
+    try {
+      localStorage.setItem(STORAGE_TOKEN_KEY, res.token);
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(res.user));
+      localStorage.setItem(STORAGE_LAST_ACTIVITY, String(Date.now()));
+    } catch {}
+  }
+  
   return res;
 }
 
