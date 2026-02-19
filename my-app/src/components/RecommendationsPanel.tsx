@@ -1,5 +1,6 @@
 import { LucideLeaf, LucideSparkles, LucideTrendingDown } from "lucide-react";
 import { Appliance } from "../types/appliance";
+import { useNavigate } from "react-router-dom";
 
 interface RecommendationsPanelProps {
   appliances: Appliance[];
@@ -28,6 +29,7 @@ const tips = [
 ];
 
 export function RecommendationsPanel({ appliances, highUsageThreshold }: RecommendationsPanelProps) {
+  const navigate = useNavigate();
   const highUsageAppliances = appliances.filter(
     (appliance) => appliance.monthlyKWh > highUsageThreshold
   );
@@ -67,10 +69,15 @@ export function RecommendationsPanel({ appliances, highUsageThreshold }: Recomme
       {highUsageAppliances.length > 0 && (
         <div className="mt-6 rounded-xl border border-amber-300/40 bg-amber-300/15 px-4 py-3 text-sm text-amber-100">
           <p className="font-semibold">Prioriza estos aparatos:</p>
-          <ul className="mt-2 list-disc space-y-1 pl-5">
+          <ul className="mt-2 space-y-1">
             {highUsageAppliances.map((appliance) => (
-              <li key={appliance.id}>
-                {appliance.name} — {appliance.monthlyKWh.toFixed(1)} kWh este mes
+              <li 
+                key={appliance.id}
+                className="cursor-pointer hover:bg-amber-300/20 rounded px-2 py-1 transition-colors"
+                onClick={() => navigate(`/appliance/${appliance.id}`)}
+                title="Ver detalles del dispositivo"
+              >
+                • {appliance.name} — {appliance.monthlyKWh.toFixed(1)} kWh este mes
               </li>
             ))}
           </ul>
