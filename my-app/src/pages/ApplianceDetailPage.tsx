@@ -187,7 +187,6 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
     
     if (filtered.length === 0) {
       console.warn('[ApplianceDetailPage] No readings in last 12 months, using all available data');
-      // Si no hay datos en los últimos 12 meses, usar todos los datos disponibles
       filtered.push(...readings);
     }
     
@@ -197,33 +196,57 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
       console.log(`[ApplianceDetailPage] Monthly calculation range: ${sorted[0].time} to ${sorted[sorted.length - 1].time}`);
     }
     
-    // Agrupar por mes (YYYY-MM) calculando energía desde potencia
-    const groups: Record<string, number> = {};
+    // Agrupar por mes (YYYY-MM)
+    const groups: Record<string, { firstEnergy?: number; lastEnergy?: number; kwh: number }> = {};
     
-    for (let i = 0; i < sorted.length - 1; i++) {
+    for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
-      const next = sorted[i + 1];
       const key = (cur.time || '').slice(0, 7); // YYYY-MM
       
-      const curTime = new Date(cur.time).getTime();
-      const nextTime = new Date(next.time).getTime();
-      const dt = (nextTime - curTime) / 1000; // segundos
+      if (!groups[key]) {
+        groups[key] = { kwh: 0 };
+      }
       
-      // Considerar intervalos hasta 24 horas (más permisivo)
-      if (dt > 0 && dt < 86400) {
-        const p = cur.powerWatts ?? 0;
-        const pNext = next.powerWatts ?? p;
-        const avgW = (p + pNext) / 2;
-        const incrementKwh = (avgW * (dt / 3600)) / 1000;
-        groups[key] = (groups[key] || 0) + incrementKwh;
+      // Si tenemos energyKwh, usar la diferencia entre primera y última del mes
+      if (cur.energyKwh !== undefined) {
+        if (groups[key].firstEnergy === undefined) {
+          groups[key].firstEnergy = cur.energyKwh;
+        }
+        groups[key].lastEnergy = cur.energyKwh;
+      } else if (i < sorted.length - 1) {
+        // Fallback: integración desde potencia si no tenemos energyKwh
+        const next = sorted[i + 1];
+        const curTime = new Date(cur.time).getTime();
+        const nextTime = new Date(next.time).getTime();
+        const dt = (nextTime - curTime) / 1000;
+        
+        if (dt > 0 && dt < 86400) {
+          const p = cur.powerWatts ?? 0;
+          const pNext = next.powerWatts ?? p;
+          const avgW = (p + pNext) / 2;
+          const incrementKwh = (avgW * (dt / 3600)) / 1000;
+          groups[key].kwh += incrementKwh;
+        }
       }
     }
 
-    console.log('[ApplianceDetailPage] Monthly groups:', groups);
+    // Calcular consumo real: diferencia entre última y primera lectura del mes
+    const finalGroups: Record<string, number> = {};
+    for (const [key, data] of Object.entries(groups)) {
+      if (data.firstEnergy !== undefined && data.lastEnergy !== undefined) {
+        // Si hay múltiples lecturas, usar la diferencia
+        finalGroups[key] = Math.max(0, data.lastEnergy - data.firstEnergy);
+      } else {
+        // Si solo hay una lectura o integración de potencia, usar el valor calculado
+        finalGroups[key] = data.kwh;
+      }
+    }
+
+    console.log('[ApplianceDetailPage] Monthly groups:', finalGroups);
 
     // Tomar todos los meses disponibles, máximo 6
-    const keys = Object.keys(groups).sort().slice(-6);
-    const result = keys.map((k) => ({ label: k, kWh: Math.round((groups[k] || 0) * 100) / 100 }));
+    const keys = Object.keys(finalGroups).sort().slice(-6);
+    const result = keys.map((k) => ({ label: k, kWh: Math.round((finalGroups[k] || 0) * 100) / 100 }));
     
     console.log('[ApplianceDetailPage] Monthly points:', result);
     return result;
@@ -251,46 +274,62 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
     
     if (filtered.length === 0) {
       console.warn('[ApplianceDetailPage] No readings in last 30 days, using all available data');
-      // Si no hay datos en los últimos 30 días, usar todos los datos disponibles
       filtered.push(...readings);
     }
     
     const sorted = filtered.slice().sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
     
-    // Agrupar por día (YYYY-MM-DD) calculando energía desde potencia
-    const byDay: Record<string, number> = {};
+    // Agrupar por día (YYYY-MM-DD)
+    const byDay: Record<string, { firstEnergy?: number; lastEnergy?: number; kwh: number }> = {};
     
-    for (let i = 0; i < sorted.length - 1; i++) {
+    for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
-      const next = sorted[i + 1];
       const day = (cur.time || '').slice(0, 10); // YYYY-MM-DD
       
-      const curTime = new Date(cur.time).getTime();
-      const nextTime = new Date(next.time).getTime();
-      const dt = (nextTime - curTime) / 1000; // segundos
+      if (!byDay[day]) {
+        byDay[day] = { kwh: 0 };
+      }
       
-      // Considerar intervalos hasta 24 horas (más permisivo)
-      if (dt > 0 && dt < 86400) {
-        const p = cur.powerWatts ?? 0;
-        const pNext = next.powerWatts ?? p;
-        const avgW = (p + pNext) / 2;
-        const incrementKwh = (avgW * (dt / 3600)) / 1000;
-        byDay[day] = (byDay[day] || 0) + incrementKwh;
+      // Si tenemos energyKwh, usar la diferencia entre primera y última del día
+      if (cur.energyKwh !== undefined) {
+        if (byDay[day].firstEnergy === undefined) {
+          byDay[day].firstEnergy = cur.energyKwh;
+        }
+        byDay[day].lastEnergy = cur.energyKwh;
+      } else if (i < sorted.length - 1) {
+        // Fallback: integración desde potencia si no tenemos energyKwh
+        const next = sorted[i + 1];
+        const curTime = new Date(cur.time).getTime();
+        const nextTime = new Date(next.time).getTime();
+        const dt = (nextTime - curTime) / 1000;
+        
+        if (dt > 0 && dt < 86400) {
+          const p = cur.powerWatts ?? 0;
+          const pNext = next.powerWatts ?? p;
+          const avgW = (p + pNext) / 2;
+          const incrementKwh = (avgW * (dt / 3600)) / 1000;
+          byDay[day].kwh += incrementKwh;
+        }
       }
     }
 
     console.log('[ApplianceDetailPage] Daily groups:', byDay);
 
-    // Tomar últimos 7 días que tengan datos, asegurando que no haya duplicados
-    const days = Object.keys(byDay).sort().slice(-7);
-    
-    // Validar que no haya duplicados
-    const uniqueDays = [...new Set(days)];
-    if (uniqueDays.length !== days.length) {
-      console.warn('[ApplianceDetailPage] Found duplicate days, filtering...', days, uniqueDays);
+    // Calcular consumo real: diferencia entre última y primera lectura del día
+    const finalByDay: Record<string, number> = {};
+    for (const [day, data] of Object.entries(byDay)) {
+      if (data.firstEnergy !== undefined && data.lastEnergy !== undefined) {
+        finalByDay[day] = Math.max(0, data.lastEnergy - data.firstEnergy);
+      } else {
+        finalByDay[day] = data.kwh;
+      }
     }
+
+    // Tomar últimos 7 días que tengan datos
+    const days = Object.keys(finalByDay).sort().slice(-7);
+    const uniqueDays = [...new Set(days)];
     
-    const result = uniqueDays.map((d) => ({ label: d, kWh: Math.round((byDay[d] || 0) * 100) / 100 }));
+    const result = uniqueDays.map((d) => ({ label: d, kWh: Math.round((finalByDay[d] || 0) * 100) / 100 }));
     
     console.log('[ApplianceDetailPage] Weekly points:', result);
     return result;

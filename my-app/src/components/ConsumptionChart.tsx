@@ -8,7 +8,8 @@ interface ConsumptionChartProps {
 }
 
 export function ConsumptionChart({ appliances, title = "Comparativa de consumo", subtitle }: ConsumptionChartProps) {
-  const maxConsumption = Math.max(...appliances.map((appliance) => appliance.monthlyKWh), 1);
+  const actualMax = appliances.length > 0 ? Math.max(...appliances.map((appliance) => appliance.monthlyKWh)) : 0;
+  const maxConsumption = Math.max(actualMax, 1);
   const navigate = useNavigate();
 
   return (
@@ -17,7 +18,7 @@ export function ConsumptionChart({ appliances, title = "Comparativa de consumo",
         <div>
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <p className="mt-1 text-sm text-emerald-100">
-            {subtitle || `Consumo más alto: ${maxConsumption.toFixed(1)} kWh`}
+            {subtitle || `Consumo más alto: ${actualMax.toFixed(1)} kWh`}
           </p>
         </div>
       </header>
@@ -45,7 +46,7 @@ export function ConsumptionChart({ appliances, title = "Comparativa de consumo",
                 </div>
                 <div className="text-center">
                   <p className="text-sm font-semibold text-white">
-                    {appliance.monthlyKWh.toFixed(1)}
+                    {appliance.monthlyKWh.toFixed(1)} kWh
                   </p>
                   <p className="text-xs text-emerald-100">{appliance.name}</p>
                 </div>
