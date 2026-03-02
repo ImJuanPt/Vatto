@@ -3,7 +3,10 @@ import numpy as np
 import random
 import os
 
-OUTPUT_FILE = "../data/training_data.csv"
+# Rutas absolutas basadas en la ubicación del script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # ai_service/
+OUTPUT_FILE = os.path.join(BASE_DIR, "data", "training_data.csv")
 SAMPLES = 25000
 
 DEVICE_MAP = {
@@ -99,7 +102,7 @@ def generate_dataset():
             }
         )
 
-    os.makedirs("../data", exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     df = pd.DataFrame(data)
     df.to_csv(OUTPUT_FILE, index=False)
     print(f"Datos regenerados (Incluye fallas estáticas).")

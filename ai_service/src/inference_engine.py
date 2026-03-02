@@ -42,12 +42,16 @@ DEVICE_TYPE_ALIASES = {
 
 
 class VattoBrainEngine:
-    def __init__(self, model_path="../models/vatto_brain_v2.pkl"):
+    def __init__(self, model_path=None):
         self.ready = False
         try:
-            base = os.path.dirname(os.path.abspath(__file__))
-            path = os.path.join(base, model_path)
-            with open(path, "rb") as f:
+            if model_path is None:
+                # Construir ruta absoluta: script_dir -> ai_service -> models
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                base_dir = os.path.dirname(os.path.dirname(script_dir))
+                model_path = os.path.join(base_dir, "ai_service", "models", "vatto_brain_v2.pkl")
+            
+            with open(model_path, "rb") as f:
                 data = pickle.load(f)
                 self.model = data["model"]
                 self.encoder = data["encoder"]
