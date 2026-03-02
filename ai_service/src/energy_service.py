@@ -179,13 +179,13 @@ class EnergyService:
             avg_watts=avg_watts,
         )
 
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:  # .begin() auto-commits al salir del bloque
             tmpl = conn.execute(
                 text("SELECT * FROM recommendation_templates WHERE id = :id"),
                 {"id": final_rec_id},
             ).fetchone()
             if tmpl:
-                print(f"{tmpl.title}")
+                print(f"📌 Guardando recomendación: {tmpl.title}")
                 savings = float(tmpl.base_savings_kwh or 0) * 5.0
 
                 # Evitar acumulación: si ya existe una recomendación activa
