@@ -187,48 +187,36 @@ class EnergyService:
             avg_watts=avg_watts,
         )
 
-        with self.engine.begin() as conn:  # .begin() auto-commits al salir del bloque
-            tmpl = conn.execute(
-                text("SELECT * FROM recommendation_templates WHERE id = :id"),
-                {"id": final_rec_id},
-            ).fetchone()
-            if tmpl:
-                print(f"📌 Guardando recomendación: {tmpl.title}")
+        try:
+            with self.engine.begin() as conn:
+                # Obtener template
+                tmpl = conn.execute(
+                    text("SELECT id, title, description, severity_level, base_savings_kwh FROM recommendation_templates WHERE id = :id"),
+                    {"id": final_rec_id},
+                ).fetchone()
+                
+                if not tmpl:
+                    print(f"⚠️  Template no encontrado: {final_rec_id}")
+                    return
+                
                 savings = float(tmpl.base_savings_kwh or 0) * 5.0
-
-                # Evitar acumulación: si ya existe una recomendación activa
-                # del mismo título para este dispositivo, se actualiza en vez de insertar.
+                
+                # Verificar si ya existe
                 existing = conn.execute(
                     text(
-                        """
-                        SELECT id
-                        FROM recommendations
-                        WHERE device_id = :did
-                          AND title = :tit
-                          AND action_taken = FALSE
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """
+                        "SELECT id FROM recommendations WHERE device_id = :did AND title = :tit AND action_taken = FALSE LIMIT 1"
                     ),
-                    {
-                        "did": device_id,
-                        "tit": tmpl.title,
-                    },
+                    {"did": device_id, "tit": tmpl.title},
                 ).fetchone()
-
+                
                 if existing:
+                    # UPDATE
                     conn.execute(
                         text(
-                            """
-                            UPDATE recommendations
-                            SET user_id = :uid,
-                                description = :desc,
-                                severity_level = :sev,
-                                ai_model_version = 'Vatto-XGB-v2',
-                                potential_savings_kwh = :sav,
-                                created_at = NOW()
-                            WHERE id = :rid
-                            """
+                            """UPDATE recommendations 
+                            SET user_id = :uid, description = :desc, severity_level = :sev,
+                                potential_savings_kwh = :sav, created_at = NOW()
+                            WHERE id = :rid"""
                         ),
                         {
                             "uid": user_id,
@@ -238,26 +226,26 @@ class EnergyService:
                             "rid": existing.id,
                         },
                     )
-                    conn.commit()
-                    return
+                    print(f"✅ Actualizado: {tmpl.title}")
+                else:
+                    # INSERT
+                    conn.execute(
+                        text(
+                            """INSERT INTO recommendations 
+                            (user_id, device_id, title, description, severity_level, 
+                             created_at, ai_model_version, potential_savings_kwh, action_taken)
+                            VALUES (:uid, :did, :tit, :desc, :sev, NOW(), 'Vatto-XGB-v2', :sav, FALSE)"""
+                        ),
+                        {
+                            "uid": user_id,
+                            "did": device_id,
+                            "tit": tmpl.title,
+                            "desc": tmpl.description,
+                            "sev": tmpl.severity_level,
+                            "sav": savings,
+                        },
+                    )
+                    print(f"✅ Guardado: {tmpl.title}")
+        except Exception as e:
+            print(f"❌ Error en _save_alert: {type(e).__name__}: {str(e)}")
 
-                conn.execute(
-                    text(
-                        """
-                    INSERT INTO recommendations (
-                        user_id, device_id, title, description, 
-                        severity_level, created_at, ai_model_version, 
-                        potential_savings_kwh, action_taken, user_feedback_score
-                    ) VALUES (:uid, :did, :tit, :desc, :sev, NOW(), 'Vatto-XGB-v2', :sav, FALSE, 0)
-                """
-                    ),
-                    {
-                        "uid": user_id,
-                        "did": device_id,
-                        "tit": tmpl.title,
-                        "desc": tmpl.description,
-                        "sev": tmpl.severity_level,
-                        "sav": savings,
-                    },
-                )
-                conn.commit()
