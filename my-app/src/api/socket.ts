@@ -4,9 +4,16 @@ let socket: Socket | null = null;
 
 export function connectSocket() {
   if (socket) return socket;
-  const base = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
-  socket = io(base, { autoConnect: true });
+  const apiBase = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
+  const socketBase = new URL(apiBase).origin;
+
+  socket = io(socketBase, {
+    autoConnect: true,
+    path: '/socket.io',
+    transports: ['websocket', 'polling'],
+  });
   socket.on('connect', () => console.log('Socket connected', socket?.id));
+  socket.on('connect_error', (err) => console.error('Socket connect error:', err.message));
   socket.on('disconnect', () => console.log('Socket disconnected'));
   return socket;
 }

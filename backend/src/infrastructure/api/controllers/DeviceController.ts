@@ -21,7 +21,11 @@ export class DeviceController {
       const { id } = req.params;
       const device = await this.ProcessDeviceUseCase.findById(Number(id));
 
-      res.status(201).json(device);
+      if (!device) {
+        return res.status(404).json({ error: "Device not found" });
+      }
+
+      res.status(200).json(device);
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: "Internal Server Error" });
@@ -143,6 +147,13 @@ export class DeviceController {
 
       if (!pairingCode || !macAddress) {
         return res.status(400).json({ error: "Missing pairingCode or macAddress" });
+      }
+
+      // Validar que el MAC no esté usado por otro dispositivo activo
+      const existingDevice = await this.ProcessDeviceUseCase.findByMac(macAddress);
+      if (existingDevice) {
+        console.warn(`[Pairing] MAC ${macAddress} already registered to device ${existingDevice.id}`);
+        return res.status(409).json({ error: "This MAC is already registered to another device. Please delete that device first." });
       }
 
       // Buscar el código de vinculación en la tabla de devices pendientes

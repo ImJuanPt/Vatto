@@ -513,12 +513,14 @@ export function ApplianceDetailPage({ user, onLogout }: ApplianceDetailPageProps
             appliances={monthlyData} 
             title="Historial mensual"
             subtitle="Consumo por mes calendario (ej: Dic 2025, Ene 2026)"
+            valueDecimals={2}
           />
 
           <ConsumptionChart 
             appliances={weeklyData} 
             title="Comportamiento semanal"
             subtitle="Energía consumida por día en la última semana"
+            valueDecimals={2}
           />
         </section>
 

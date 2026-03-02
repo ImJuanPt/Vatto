@@ -75,7 +75,7 @@ function App() {
         element={isAuthenticated ? <ProtectedLayout onLogout={handleLogout} user={user} /> : <Navigate to="/login" replace />}
       >
         {/* ahora WelcomePage es protegida */}
-        <Route path="/" element={<WelcomePage onNavigateToDashboard={() => console.log('Navigating to dashboard')} />} />
+        <Route path="/" element={<WelcomePage user={user} />} />
 
         <Route path="/resumen" element={<SummaryPage user={user} />} />
         <Route path="/gestion" element={<GestionPage user={user} />} />

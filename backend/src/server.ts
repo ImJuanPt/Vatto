@@ -20,11 +20,13 @@ import { createDeviceRoutes } from "./infrastructure/api/routes/device.routes";
 import { createReadingRoutes } from "./infrastructure/api/routes/reading.routes";
 import { createLocationRoutes } from "./infrastructure/api/routes/location.routes";
 import { createAuthRoutes } from "./infrastructure/api/routes/auth.routes";
+import { createRecommendationRoutes } from "./infrastructure/api/routes/recommendation.routes";
 
 import { ReadingController } from "./infrastructure/api/controllers/ReadingController";
 import { DeviceController } from "./infrastructure/api/controllers/DeviceController";
 import { LocationController } from "./infrastructure/api/controllers/LocationController";
 import { AuthController } from "./infrastructure/api/controllers/AuthController";
+import { RecommendationController } from "./infrastructure/api/controllers/RecommendationController";
 
 import { ProcessReadingUseCase } from "./application/use-cases/ProcessReadingUseCase";
 import { ProcessDeviceUseCase } from "./application/use-cases/ProcessDeviceUseCase";
@@ -75,6 +77,7 @@ async function bootstrap() {
   const deviceController = new DeviceController(processDeviceUseCase);
   const locationController = new LocationController(processLocationUseCase);
   const authController = new AuthController(processAuthUseCase);
+  const recommendationController = new RecommendationController();
 
   // Iniciar scheduler para limpiar dispositivos sin pairing después de 60 minutos
   const deviceCleanupScheduler = new DeviceCleanupScheduler(deviceRepo);
@@ -94,6 +97,7 @@ async function bootstrap() {
   protectedRouter.use("/readings", createReadingRoutes(readingController));
   protectedRouter.use("/devices", createDeviceRoutes(deviceController));
   protectedRouter.use("/locations", createLocationRoutes(locationController));
+  protectedRouter.use("/recommendations", createRecommendationRoutes(recommendationController));
 
   app.use('/api/v1', protectedRouter);
 

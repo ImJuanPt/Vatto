@@ -49,6 +49,7 @@ async function request<T = any>(
 export const api = {
   get: <T = any>(path: string, query?: Query) => request<T>(path, { method: 'GET', query }),
   post: <T = any>(path: string, body?: any) => request<T>(path, { method: 'POST', body }),
+  patch: <T = any>(path: string, body?: any) => request<T>(path, { method: 'PATCH', body }),
   put: <T = any>(path: string, body?: any) => request<T>(path, { method: 'PUT', body }),
   del: <T = any>(path: string) => request<T>(path, { method: 'DELETE' }),
   setAuthToken,

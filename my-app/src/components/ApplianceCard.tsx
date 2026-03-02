@@ -5,6 +5,10 @@ import { getCategoryLabel } from "../api/devices";
 interface ApplianceCardProps {
   appliance: Appliance;
   highUsageThreshold: number;
+  recommendationCount?: number;
+  topRecommendationSeverity?: string;
+  latestRecommendationTitle?: string;
+  latestRecommendationDescription?: string;
 }
 
 const categoryColors: Record<Appliance["category"], string> = {
@@ -16,10 +20,27 @@ const categoryColors: Record<Appliance["category"], string> = {
   other: "bg-slate-400/20 text-slate-100 border border-slate-300/40",
 };
 
-export function ApplianceCard({ appliance, highUsageThreshold }: ApplianceCardProps) {
+export function ApplianceCard({
+  appliance,
+  highUsageThreshold,
+  recommendationCount = 0,
+  topRecommendationSeverity,
+  latestRecommendationTitle,
+  latestRecommendationDescription,
+}: ApplianceCardProps) {
   const isHighUsage = appliance.monthlyKWh > highUsageThreshold;
   const currentState = appliance._meta?.currentState || 'off';
   const isOn = currentState === 'on';
+  const hasRecommendations = recommendationCount > 0;
+
+  const recommendationBadgeStyle =
+    topRecommendationSeverity === 'CRITICAL'
+      ? 'bg-red-500/20 text-red-100 border border-red-300/40'
+      : topRecommendationSeverity === 'HIGH'
+      ? 'bg-orange-500/20 text-orange-100 border border-orange-300/40'
+      : topRecommendationSeverity === 'WARNING'
+      ? 'bg-yellow-500/20 text-yellow-100 border border-yellow-300/40'
+      : 'bg-sky-500/20 text-sky-100 border border-sky-300/40';
 
   return (
     <article className="relative rounded-2xl border border-white/10 bg-white/10 p-5 text-emerald-100 shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-xl">
@@ -32,6 +53,15 @@ export function ApplianceCard({ appliance, highUsageThreshold }: ApplianceCardPr
               <LucidePlug className="h-3.5 w-3.5" />
               {getCategoryLabel(appliance.category)}
             </span>
+            {hasRecommendations && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${recommendationBadgeStyle}`}
+                title={`${recommendationCount} recomendación(es) de IA`}
+              >
+                <LucideAlertTriangle className="h-3.5 w-3.5" />
+                IA: {recommendationCount}
+              </span>
+            )}
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
                 isOn
@@ -73,6 +103,23 @@ export function ApplianceCard({ appliance, highUsageThreshold }: ApplianceCardPr
       <p className="mt-4 text-xs text-emerald-200">
         Actualizado {new Date(appliance.lastUpdated).toLocaleString()}
       </p>
+
+      {hasRecommendations && (
+        <div className="mt-4 rounded-xl border border-indigo-300/30 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+          <p className="font-semibold text-indigo-50">
+            Recomendación IA para este equipo
+          </p>
+          {latestRecommendationTitle && (
+            <p className="mt-1 font-medium text-white">{latestRecommendationTitle}</p>
+          )}
+          {latestRecommendationDescription && (
+            <p className="mt-1 text-indigo-100/90 line-clamp-2">{latestRecommendationDescription}</p>
+          )}
+          {recommendationCount > 1 && (
+            <p className="mt-2 text-indigo-200/80">+{recommendationCount - 1} recomendación(es) adicional(es)</p>
+          )}
+        </div>
+      )}
 
       {isHighUsage && (
         <div className="absolute -top-4 right-4 inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-100 shadow">
