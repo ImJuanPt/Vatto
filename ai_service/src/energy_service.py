@@ -52,10 +52,40 @@ class EnergyService:
     def __init__(self):
         self.engine = get_engine()
         self.brain = VattoBrainEngine()
+        
+        # Umbrales realistas de consumo (en Watts) para detectar anomalías
+        self.consumption_thresholds = {
+            "aircon": 2000,           # AC: >2000W = muy alto
+            "ac": 2000,
+            "fan": 150,               # Ventilador: >150W = muy alto
+            "tv": 600,                # TV: >600W = muy alto
+            "television": 600,
+            "refrigerator": 550,      # Nevera: >550W = muy alto (consumo normal ~150-200W)
+            "fridge": 550,
+            "washing_machine": 2500,  # Lavadora: >2500W = muy alto o fallo
+            "washer": 2500,
+            "coffee_maker": 1200,     # Cafetera: >1200W = sobrecarga
+            "microwave": 1400,        # Microondas: >1400W = sobrecarga
+            "oven": 3500,             # Horno: >3500W = muy alto
+        }
 
     def analyze_device_reading(
         self, user_id, device_id, device_type, current_watts, reading_timestamp
     ):
+
+        # Primero verificar umbrales realistas (protección rápida)
+        threshold = self.consumption_thresholds.get(device_type.lower(), current_watts * 1.5)
+        if current_watts > threshold:
+            # Consumo crítico detectado
+            self._save_alert(
+                user_id=user_id,
+                device_id=device_id,
+                device_type=device_type,
+                rec_id=18,  # Alerta crítica
+                current_watts=current_watts,
+                avg_watts=threshold,
+            )
+            return {"status": "CRITICAL_CONSUMPTION", "id": 18}
 
         avg_watts_profile = self._get_profile_stats(device_id, current_watts)
 

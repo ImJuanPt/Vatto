@@ -52,8 +52,10 @@ def run_system():
 
                     if result["status"] == "NORMAL":
                         print("Funcionamiento Correcto")
+                    elif result["status"] == "CRITICAL_CONSUMPTION":
+                        print("⚠️  ALERTA: Consumo crítico detectado - Recomendación guardada")
                     else:
-                        print(f"Alerta: {result}")
+                        print(f"⚠️  Anomalía detectada (ID: {result['id']}) - Recomendación guardada")
                 except Exception as e:
                     print(f"❌ ERROR: {type(e).__name__}: {str(e)}")
             else:
