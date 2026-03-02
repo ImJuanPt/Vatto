@@ -41,16 +41,21 @@ def run_system():
                 print(f"\n{d_name} ({d_type})")
                 print(f"Dato: {watts}W | Hora lectura: {r_time.strftime('%H:%M')}")
 
-                result = service.analyze_device_reading(
-                    user_id=owner_user_id,
-                    device_id=d_id,
-                    device_type=d_type,
-                    current_watts=watts,
-                    reading_timestamp=r_time,
-                )
+                try:
+                    result = service.analyze_device_reading(
+                        user_id=owner_user_id,
+                        device_id=d_id,
+                        device_type=d_type,
+                        current_watts=watts,
+                        reading_timestamp=r_time,
+                    )
 
-                if result["status"] == "NORMAL":
-                    print("Funcionamiento Correcto")
+                    if result["status"] == "NORMAL":
+                        print("Funcionamiento Correcto")
+                    else:
+                        print(f"Alerta: {result}")
+                except Exception as e:
+                    print(f"❌ ERROR: {type(e).__name__}: {str(e)}")
             else:
                 print(f"{d_name}: Sin datos recientes.")
 
