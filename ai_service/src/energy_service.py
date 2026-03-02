@@ -77,15 +77,19 @@ class EnergyService:
         threshold = self.consumption_thresholds.get(device_type.lower(), current_watts * 1.5)
         if current_watts > threshold:
             # Consumo crítico detectado
-            self._save_alert(
-                user_id=user_id,
-                device_id=device_id,
-                device_type=device_type,
-                rec_id=18,  # Alerta crítica
-                current_watts=current_watts,
-                avg_watts=threshold,
-            )
-            return {"status": "CRITICAL_CONSUMPTION", "id": 18}
+            try:
+                self._save_alert(
+                    user_id=user_id,
+                    device_id=device_id,
+                    device_type=device_type,
+                    rec_id=18,  # Alerta crítica
+                    current_watts=current_watts,
+                    avg_watts=threshold,
+                )
+                return {"status": "CRITICAL_CONSUMPTION", "id": 18}
+            except Exception as e:
+                print(f"❌ Error guardando alerta crítica: {type(e).__name__}: {str(e)}")
+                return {"status": "CRITICAL_CONSUMPTION", "id": 18}
 
         avg_watts_profile = self._get_profile_stats(device_id, current_watts)
 
@@ -109,15 +113,19 @@ class EnergyService:
         if prediction_id == 0:
             return {"status": "NORMAL", "id": 0}
         else:
-            self._save_alert(
-                user_id=user_id,
-                device_id=device_id,
-                device_type=device_type,
-                rec_id=prediction_id,
-                current_watts=current_watts,
-                avg_watts=avg_watts_profile,
-            )
-            return {"status": "ANOMALY", "id": prediction_id}
+            try:
+                self._save_alert(
+                    user_id=user_id,
+                    device_id=device_id,
+                    device_type=device_type,
+                    rec_id=prediction_id,
+                    current_watts=current_watts,
+                    avg_watts=avg_watts_profile,
+                )
+                return {"status": "ANOMALY", "id": prediction_id}
+            except Exception as e:
+                print(f"❌ Error guardando alerta: {type(e).__name__}: {str(e)}")
+                return {"status": "ANOMALY", "id": prediction_id}
 
     def _get_short_term_memory(self, device_id, current_val):
         """
