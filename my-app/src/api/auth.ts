@@ -53,6 +53,15 @@ export function getStoredAuth() {
   }
 }
 
+export function setStoredAuth(token: string, user: any) {
+  api.setAuthToken(token);
+  try {
+    localStorage.setItem(STORAGE_TOKEN_KEY, token);
+    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
+    localStorage.setItem(STORAGE_LAST_ACTIVITY, String(Date.now()));
+  } catch {}
+}
+
 export function touchSession() {
   try {
     localStorage.setItem(STORAGE_LAST_ACTIVITY, String(Date.now()));
@@ -71,4 +80,4 @@ export function isSessionExpired(): boolean {
   }
 }
 
-export default { login, register, logout, getStoredAuth, touchSession, isSessionExpired };
+export default { login, register, logout, getStoredAuth, setStoredAuth, touchSession, isSessionExpired };

@@ -16,6 +16,26 @@ function App() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mobileToken = params.get('mobileToken');
+    const mobileUserRaw = params.get('mobileUser');
+
+    if (mobileToken && mobileUserRaw) {
+      try {
+        const mobileUser = JSON.parse(mobileUserRaw);
+        authService.setStoredAuth(mobileToken, mobileUser);
+        setIsAuthenticated(true);
+        setUser(mobileUser);
+        setAuthReady(true);
+
+        const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return;
+      } catch {
+        // Si falla parseo, seguir con flujo normal
+      }
+    }
+
     const stored = authService.getStoredAuth();
     if (stored.token) {
       // verificar inactividad
