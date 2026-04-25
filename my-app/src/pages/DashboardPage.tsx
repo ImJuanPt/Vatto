@@ -7,12 +7,14 @@ import { useMemo, useState, useEffect } from "react";
 import devicesService from "../api/devices";
 import { applianceHighUsageThreshold } from "../config/constants";
 import { Appliance } from "../types/appliance";
+import { getRecommendations, RecommendationResponse } from "../api/recommendations";
 
 export function DashboardPage({ onLogout }: { onLogout?: () => void }) {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   const [appliances, setAppliances] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [recommendations, setRecommendations] = useState<RecommendationResponse[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -29,6 +31,51 @@ export function DashboardPage({ onLogout }: { onLogout?: () => void }) {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getRecommendations()
+      .then((list) => {
+        if (!mounted) return;
+        setRecommendations(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setRecommendations([]);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const recommendationsByDevice = useMemo(() => {
+    const grouped = new Map<number, RecommendationResponse[]>();
+    for (const rec of recommendations) {
+      const did = Number(rec.device_id);
+      if (!Number.isFinite(did)) continue;
+      if (!grouped.has(did)) grouped.set(did, []);
+      grouped.get(did)!.push(rec);
+    }
+    return grouped;
+  }, [recommendations]);
+
+  const getTopSeverity = (deviceRecommendations: RecommendationResponse[]): string | undefined => {
+    if (!deviceRecommendations.length) return undefined;
+    const order: Record<string, number> = {
+      CRITICAL: 1,
+      HIGH: 2,
+      WARNING: 3,
+      MEDIUM: 4,
+      LOW: 5,
+      INFO: 6,
+    };
+
+    return [...deviceRecommendations]
+      .sort((a, b) => (order[a.severity_level] ?? 99) - (order[b.severity_level] ?? 99))[0]
+      ?.severity_level;
+  };
 
   const filteredAppliances = useMemo(() => {
     if (categoryFilter === "all") return appliances;
@@ -121,13 +168,20 @@ export function DashboardPage({ onLogout }: { onLogout?: () => void }) {
             </div>
           ) : (
             <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {sortedAppliances.map((appliance: Appliance) => (
+              {sortedAppliances.map((appliance: Appliance) => {
+                const deviceRecommendations = recommendationsByDevice.get(Number(appliance.id)) ?? [];
+                return (
                 <ApplianceCard
                   key={appliance.id}
                   appliance={appliance}
                   highUsageThreshold={applianceHighUsageThreshold}
+                  recommendationCount={deviceRecommendations.length}
+                  topRecommendationSeverity={getTopSeverity(deviceRecommendations)}
+                  latestRecommendationTitle={deviceRecommendations[0]?.title}
+                  latestRecommendationDescription={deviceRecommendations[0]?.description}
                 />
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

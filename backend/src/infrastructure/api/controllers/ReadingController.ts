@@ -14,7 +14,7 @@ export class ReadingController {
     try {
       const readingData = req.body;
 
-      // Allow powerWatts to be 0, just not undefined/null
+      // Permitir que powerWatts sea 0, solo no undefined/null
       if (!readingData.deviceId || readingData.powerWatts == null) {
         return res.status(400).json({ error: "Missing data" });
       }
@@ -35,7 +35,7 @@ export class ReadingController {
     }
   };
 
-  // GET /readings/latest/:deviceId
+  // Obtener ultima lectura: GET /readings/latest/:deviceId
   getLatest = async (req: Request, res: Response) => {
     try {
       const { deviceId } = req.params;
@@ -49,7 +49,7 @@ export class ReadingController {
     }
   };
 
-  // GET /readings/device/:deviceId?limit=100
+  // Obtener historial de lecturas: GET /readings/device/:deviceId?limit=100
   getHistory = async (req: Request, res: Response) => {
     try {
       const { deviceId } = req.params;

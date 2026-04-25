@@ -1,1 +1,1 @@
-export const applianceHighUsageThreshold = 45; // kWh per month
+export const applianceHighUsageThreshold = 45; // kWh por mes

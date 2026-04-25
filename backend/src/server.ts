@@ -20,11 +20,13 @@ import { createDeviceRoutes } from "./infrastructure/api/routes/device.routes";
 import { createReadingRoutes } from "./infrastructure/api/routes/reading.routes";
 import { createLocationRoutes } from "./infrastructure/api/routes/location.routes";
 import { createAuthRoutes } from "./infrastructure/api/routes/auth.routes";
+import { createRecommendationRoutes } from "./infrastructure/api/routes/recommendation.routes";
 
 import { ReadingController } from "./infrastructure/api/controllers/ReadingController";
 import { DeviceController } from "./infrastructure/api/controllers/DeviceController";
 import { LocationController } from "./infrastructure/api/controllers/LocationController";
 import { AuthController } from "./infrastructure/api/controllers/AuthController";
+import { RecommendationController } from "./infrastructure/api/controllers/RecommendationController";
 
 import { ProcessReadingUseCase } from "./application/use-cases/ProcessReadingUseCase";
 import { ProcessDeviceUseCase } from "./application/use-cases/ProcessDeviceUseCase";
@@ -42,7 +44,7 @@ async function bootstrap() {
     app.use(
       cors({
         origin: (origin, callback) => {
-          // Allow requests with no origin (curl, native apps)
+          // Permitir peticiones sin origen (curl, apps nativas)
           if (!origin) return callback(null, true);
           if (corsOrigins.includes(origin)) return callback(null, true);
           return callback(new Error('CORS origin not allowed'));
@@ -75,15 +77,16 @@ async function bootstrap() {
   const deviceController = new DeviceController(processDeviceUseCase);
   const locationController = new LocationController(processLocationUseCase);
   const authController = new AuthController(processAuthUseCase);
+  const recommendationController = new RecommendationController();
 
   // Iniciar scheduler para limpiar dispositivos sin pairing después de 60 minutos
   const deviceCleanupScheduler = new DeviceCleanupScheduler(deviceRepo);
   deviceCleanupScheduler.start();
 
-  // Expose pairing endpoint without auth so ESP32 devices can call it during setup
+  // Exponer endpoint de emparejamiento sin autenticacion para que dispositivos ESP32 puedan llamarlo durante configuracion
   app.post('/api/v1/devices/pair', (req, res) => deviceController.pair(req as any, res as any));
 
-  // Expose readings endpoint without auth so ESP32 devices can send sensor data
+  // Exponer endpoint de lecturas sin autenticacion para que dispositivos ESP32 puedan enviar datos de sensores
   app.post('/api/v1/readings', (req, res) => readingController.receiveReading(req as any, res as any));
 
   app.use('/api/v1/auth', createAuthRoutes(authController));
@@ -94,6 +97,7 @@ async function bootstrap() {
   protectedRouter.use("/readings", createReadingRoutes(readingController));
   protectedRouter.use("/devices", createDeviceRoutes(deviceController));
   protectedRouter.use("/locations", createLocationRoutes(locationController));
+  protectedRouter.use("/recommendations", createRecommendationRoutes(recommendationController));
 
   app.use('/api/v1', protectedRouter);
 

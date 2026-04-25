@@ -6,10 +6,13 @@
 #include <time.h>
 
 // ============== CONFIGURACIÓN GENERAL ==============
-#define BACKEND_URL_BASE          "http://217.71.203.129/api/v1"
-#define BACKEND_URL_READINGS      "http://217.71.203.129/api/v1/readings"
+#define BACKEND_URL_BASE          "https://vatto.online/api/v1"
+#define BACKEND_URL_READINGS      "https://vatto.online/api/v1/readings"
 #define AP_SSID                   "Vatto-Setup"
 #define AP_PASSWORD               "12345678"
+#define DEVICE_MODEL_ID           "PZEM-ESP32-V1"
+#define QR_LANDING_BASE_URL       "https://vatto.online/qr"
+#define APK_DOWNLOAD_URL          "https://vatto.online/apk/vatto-latest.apk"
 #define RXD2                      16
 #define TXD2                      17
 
@@ -35,6 +38,22 @@ PZEM004Tv30 pzem(Serial2, RXD2, TXD2);
 WebServer server(80);
 bool sensorHealthy = false;
 
+// ============== FORWARD DECLARATIONS ==============
+bool connectToWiFi(String ssid, String password, bool keepAP);
+bool connectToWifiWithRetry(String ssid, String password, int maxRetries, bool keepAP);
+bool pairDeviceWithRetry(String pairingCode, int maxRetries);
+bool pairDevice(String pairingCode);
+bool validateDeviceStillExists();
+void handleNormalMode();
+void readAndSendSensorData();
+void resetConfiguration();
+void handleInfo();
+void addCorsHeaders();
+String urlEncode(const String& value);
+String buildQrLandingUrl(const String& macAddress);
+String buildProvisioningQrPayload(const String& macAddress);
+void printProvisioningSummary();
+
 // ============== NTP ==============
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 0;
@@ -50,8 +69,11 @@ bool configurationMode = true;
 // ============== MÉTRICAS Y DEBUG ==============
 unsigned long lastReadingTime = 0;
 unsigned long lastWifiReconnectAttempt = 0;
+unsigned long lastDeviceValidationTime = 0;
+unsigned long lastSuccessfulPairingTime = 0;  // Timestamp del último pairing exitoso
 int consecutiveReadingFailures = 0;
 int consecutiveHttpFailures = 0;
+int consecutiveValidationFailures = 0;  // Contador para fallos de validación
 
 // ============== ENUMS PARA LOGGING ==============
 enum LogLevel { LOG_INFO, LOG_WARN, LOG_ERROR, LOG_SUCCESS };
@@ -66,84 +88,158 @@ void logMessage(const char* tag, LogLevel level, const char* format, ...) {
 
   const char* prefix = "";
   switch (level) {
-    case LOG_INFO:    prefix = "ℹ️  "; break;
-    case LOG_WARN:    prefix = "⚠️  "; break;
-    case LOG_ERROR:   prefix = "❌ "; break;
-    case LOG_SUCCESS: prefix = "✅ "; break;
+    case LOG_INFO:    prefix = "[INFO] "; break;
+    case LOG_WARN:    prefix = "[WARN] "; break;
+    case LOG_ERROR:   prefix = "[ERROR] "; break;
+    case LOG_SUCCESS: prefix = "[OK] "; break;
   }
 
   Serial.printf("[%s] %s%s\n", tag, prefix, buffer);
+}
+
+String urlEncode(const String& value) {
+  String encoded = "";
+  const char* hex = "0123456789ABCDEF";
+
+  for (size_t i = 0; i < value.length(); i++) {
+    unsigned char c = value.charAt(i);
+    bool isUnreserved = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~';
+
+    if (isUnreserved) {
+      encoded += (char)c;
+    } else {
+      encoded += '%';
+      encoded += hex[(c >> 4) & 0x0F];
+      encoded += hex[c & 0x0F];
+    }
+  }
+
+  return encoded;
+}
+
+String buildQrLandingUrl(const String& macAddress) {
+  String url = String(QR_LANDING_BASE_URL);
+  url += "?mac=" + urlEncode(macAddress);
+  url += "&model=" + urlEncode(String(DEVICE_MODEL_ID));
+  return url;
+}
+
+String buildProvisioningQrPayload(const String& macAddress) {
+  String payload = "{";
+  payload += "\"v\":1,";
+  payload += "\"brand\":\"VATTO\",";
+  payload += "\"deviceType\":\"pzem-esp32\",";
+  payload += "\"model\":\"" + String(DEVICE_MODEL_ID) + "\",";
+  payload += "\"mac\":\"" + macAddress + "\",";
+  payload += "\"apSsid\":\"" + String(AP_SSID) + "\",";
+  payload += "\"apIp\":\"192.168.4.1\",";
+  payload += "\"setupUrl\":\"http://192.168.4.1\",";
+  payload += "\"apkUrl\":\"" + String(APK_DOWNLOAD_URL) + "\",";
+  payload += "\"linkUrl\":\"" + buildQrLandingUrl(macAddress) + "\"";
+  payload += "}";
+  return payload;
+}
+
+void printProvisioningSummary() {
+  String staMac = WiFi.macAddress();
+  String apMac = WiFi.softAPmacAddress();
+  String qrUrl = buildQrLandingUrl(staMac);
+  String qrPayload = buildProvisioningQrPayload(staMac);
+
+  Serial.println("\n================= VATTO PROVISIONING DATA =================");
+  Serial.println("Copia y guarda estos datos para etiquetar el medidor:\n");
+  Serial.println("- MAC (STA, para registro): " + staMac);
+  Serial.println("- MAC (AP): " + apMac);
+  Serial.println("- Modelo: " + String(DEVICE_MODEL_ID));
+  Serial.println("- URL QR permanente recomendada: " + qrUrl);
+  Serial.println("- URL descarga APK: " + String(APK_DOWNLOAD_URL));
+  Serial.println("- Payload QR JSON sugerido:");
+  Serial.println(qrPayload);
+  Serial.println("===========================================================\n");
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("\n╔════════════════════════════════════════════════════╗");
-  Serial.println("║    ESP32 PZEM Power Monitor v3.1 (Professional)    ║");
-  Serial.println("║              Firmware Initialization                ║");
-  Serial.println("╚════════════════════════════════════════════════════╝\n");
+  Serial.println("\n=== ESP32 PZEM Power Monitor v3.1 - Initialization ===");
 
-  // Cargar configuración guardada
   preferences.begin("pzem_config", false);
   deviceId = preferences.getInt("deviceId", 0);
   wifiSSID = preferences.getString("ssid", "");
   wifiPassword = preferences.getString("password", "");
   pairingCodeStored = preferences.getString("pairingCode", "");
   preferences.end();
+  logMessage("INIT", LOG_INFO, "Configuration loaded: deviceId=%d", deviceId);
 
-  logMessage("INIT", LOG_INFO, "Loaded configuration: deviceId=%d, SSID=%s", deviceId, wifiSSID.c_str());
-
-  // Inicializar PZEM
   Serial2.begin(PZEM_BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
-  logMessage("PZEM", LOG_INFO, "Serial initialized (BAUD=%d)", PZEM_BAUD_RATE);
-  
-  // Esperar a que el sensor se estabilice
+  logMessage("PZEM", LOG_INFO, "Serial initialized");
   delay(2000);
-  logMessage("PZEM", LOG_INFO, "Waiting for sensor to stabilize...");
 
-  // Determinar modo
   if (deviceId == 0) {
     configurationMode = true;
-    logMessage("MODE", LOG_WARN, "Configuration mode (no deviceId found)");
-    logMessage("MODE", LOG_INFO, "AP: SSID=%s, Password=%s", AP_SSID, AP_PASSWORD);
-    logMessage("MODE", LOG_INFO, "Web: http://192.168.4.1");
+    logMessage("MODE", LOG_WARN, "Configuration mode - AP: Vatto-Setup on 192.168.4.1");
     startConfigurationMode();
   } else {
     configurationMode = false;
-    logMessage("MODE", LOG_SUCCESS, "Normal mode (deviceId=%d)", deviceId);
+    logMessage("MODE", LOG_SUCCESS, "Normal mode - deviceId=%d", deviceId);
     
-  // Prueba inicial del sensor
-    logMessage("PZEM", LOG_INFO, "Testing sensor communication...");
     float testVoltage = pzem.voltage();
     float testCurrent = pzem.current();
     float testPower = pzem.power();
     
-    // Si alguna lectura es válida, el sensor está respondiendo
     if (!isnan(testVoltage) || !isnan(testCurrent) || !isnan(testPower)) {
       sensorHealthy = true;
-      logMessage("PZEM", LOG_SUCCESS, "Sensor OK - V=%.2fV I=%.2fA P=%.2fW", testVoltage, testCurrent, testPower);
+      logMessage("PZEM", LOG_SUCCESS, "Sensor OK");
     } else {
       sensorHealthy = false;
-      logMessage("PZEM", LOG_ERROR, "Sensor NOT responding!");
-      logMessage("PZEM", LOG_ERROR, "REVISAR: RXD2(pin16), TXD2(pin17), conexión serial y voltaje");
-      logMessage("PZEM", LOG_ERROR, "Reiniciando en 5 segundos...");
-      Serial2.end();
-      delay(5000);
-      ESP.restart();
+      logMessage("PZEM", LOG_WARN, "Sensor not responding - check connections");
     }
+      logMessage("WIFI", LOG_INFO, "Connecting to: %s", wifiSSID.c_str());
     
-    logMessage("WIFI", LOG_INFO, "Attempting to connect to: %s", wifiSSID.c_str());
-    
-    if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES)) {
-      logMessage("WIFI", LOG_ERROR, "Failed after %d retries. Restarting...", MAX_WIFI_RETRIES);
+    if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES, false)) {
+      logMessage("WIFI", LOG_ERROR, "WiFi failed after %d attempts", MAX_WIFI_RETRIES);
       delay(3000);
       ESP.restart();
     }
     
-    logMessage("NTP", LOG_INFO, "Syncing time with NTP server...");
+    logMessage("NTP", LOG_INFO, "Syncing time");
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     delay(2000);
+    
+    unsigned long timeSincePairing = millis() - lastSuccessfulPairingTime;
+    bool justPaired = (lastSuccessfulPairingTime > 0 && timeSincePairing < 60000);
+    
+    if (justPaired) {
+      logMessage("VALIDATE", LOG_INFO, "Skipping validation - just paired");
+    } else {
+      logMessage("VALIDATE", LOG_INFO, "Validating device");
+      
+      bool validated = false;
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+          logMessage("VALIDATE", LOG_INFO, "Retry %d/3", attempt);
+          delay(2000);
+        }
+        
+        if (validateDeviceStillExists()) {
+          validated = true;
+          break;
+        }
+      }
+      
+      if (!validated) {
+        logMessage("VALIDATE", LOG_ERROR, "Device validation failed");
+        WiFi.disconnect();
+        resetConfiguration();
+        configurationMode = true;
+        startConfigurationMode();
+        return;  // Salir del setup, enter loop() en modo configuración
+      }
+      
+      logMessage("VALIDATE", LOG_SUCCESS, "Device %d validated successfully", deviceId);
+    }
   }
 }
 
@@ -156,15 +252,10 @@ void loop() {
   }
 }
 
-/**
- * MODO CONFIGURACIÓN - Iniciar Access Point y servidor web
- */
 void startConfigurationMode() {
-  // Desactivar STA y activar AP
   WiFi.mode(WIFI_AP_STA);
   delay(100);
 
-  // Iniciar Access Point
   if (!WiFi.softAP(AP_SSID, AP_PASSWORD)) {
     logMessage("AP", LOG_ERROR, "Failed to start Access Point");
     delay(3000);
@@ -174,21 +265,68 @@ void startConfigurationMode() {
   IPAddress apIP = WiFi.softAPIP();
   logMessage("AP", LOG_SUCCESS, "Access Point started");
   logMessage("AP", LOG_INFO, "IP: %s", apIP.toString().c_str());
-  logMessage("AP", LOG_INFO, "SSID: %s", AP_SSID);
-  logMessage("AP", LOG_INFO, "Password: %s", AP_PASSWORD);
+  printProvisioningSummary();
 
-  // Configurar rutas del servidor web
   server.on("/", HTTP_GET, handleWebRoot);
   server.on("/configure", HTTP_POST, handleConfigure);
+  server.on("/info", HTTP_GET, handleInfo);
+
+  // CORS preflight para que el WebView de la app móvil pueda llamar directamente
+  server.on("/configure", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204);
+  });
+  server.on("/info", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204);
+  });
 
   server.onNotFound([]() {
+    addCorsHeaders();
     server.send(404, "text/plain", "Not found");
   });
 
-  // Iniciar servidor web
   server.begin();
-  logMessage("WEB", LOG_SUCCESS, "Web server started on port 80");
-  logMessage("WEB", LOG_INFO, "Open: http://192.168.4.1");
+  logMessage("WEB", LOG_SUCCESS, "Web server started");
+}
+
+// ============================================================
+// CORS: permite que el WebView de la app móvil (Capacitor)
+// llame a http://192.168.4.1 sin bloqueos de origen cruzado
+// ============================================================
+void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+/**
+ * GET /info
+ * Devuelve información del dispositivo en JSON.
+ * La app móvil llama a este endpoint (cuando está conectada al AP Vatto-Setup)
+ * para verificar que está hablando con el ESP32 correcto antes de enviar credenciales.
+ * Respuesta: { "mac": "AA:BB:CC:DD:EE:FF", "model": "PZEM-ESP32-V1",
+ *              "status": "unconfigured" | "configured", "deviceId": 0 }
+ */
+void handleInfo() {
+  addCorsHeaders();
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+
+  String mac = WiFi.softAPmacAddress();
+  String staMac = WiFi.macAddress();
+  String status = (deviceId > 0) ? "configured" : "unconfigured";
+  String qrUrl = buildQrLandingUrl(staMac);
+
+  String json = "{";
+  json += "\"mac\":\"" + mac + "\",";
+  json += "\"staMac\":\"" + staMac + "\",";
+  json += "\"model\":\"" + String(DEVICE_MODEL_ID) + "\",";
+  json += "\"status\":\"" + status + "\",";
+  json += "\"qrUrl\":\"" + qrUrl + "\",";
+  json += "\"deviceId\":" + String(deviceId);
+  json += "}";
+
+  server.send(200, "application/json", json);
 }
 
 /**
@@ -198,6 +336,10 @@ void startConfigurationMode() {
 void handleWebRoot() {
   // Si ya está configurado, mostrar página de éxito
   if (deviceId > 0) {
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "0");
+    
     String successHtml = R"(
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -209,11 +351,17 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
 </head><body><div class="container"><div class="check">✅</div><h1>Dispositivo Configurado</h1>
 <p>Tu PZEM está listo. Conectado al backend en modo normal.</p><p style="color:#999;font-size:12px;margin-top:20px">DeviceId: )";
     successHtml += String(deviceId) + R"(</p></div></body></html>)";
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "0");
     server.send(200, "text/html; charset=utf-8", successHtml);
     return;
   }
 
-  // Página de configuración
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+  
   String html = R"(
 <!DOCTYPE html>
 <html lang="es">
@@ -327,7 +475,11 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
   <div class="container">
     <div class="header">
       <h1>⚡ Configuración PZEM</h1>
-      <p>Conecta tu dispositivo al WiFi y vinculalo</p>
+      <p>Ingresa los datos de tu red WiFi. El QR de la app VATTO es ahora el método principal.</p>
+      <div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:6px;font-size:12px;color:#3730a3;text-align:left">
+        📱 <strong>Desde la app VATTO:</strong> Escanea el QR del medidor para vincular por MAC automáticamente.<br>
+        🆘 Si no tienes la app o el QR, usa el código de respaldo aquí abajo.
+      </div>
     </div>
 
     <form id="configForm" novalidate>
@@ -346,10 +498,10 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
       </div>
 
       <div class="form-group">
-        <label for="pairingCode">Código de Vinculación</label>
+        <label for="pairingCode">Código de respaldo <span style="font-weight:400;color:#aaa">(opcional)</span></label>
         <input type="text" id="pairingCode" name="pairingCode" 
-               placeholder="000000" pattern="[0-9]{6}" maxlength="6" required>
-        <div class="info-text">6 dígitos (del dispositivo creado)</div>
+               placeholder="000000" pattern="[0-9]{6}" maxlength="6">
+        <div class="info-text">Solo si <strong>no</strong> escaneaste el QR desde la app VATTO. Si escaneaste el QR, deja este campo vacío.</div>
       </div>
 
       <button type="submit" id="submitBtn">Configurar Dispositivo</button>
@@ -378,41 +530,54 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
 
       // Validar
       if (!ssid || ssid.length < 1 || ssid.length > 32) {
-        showStatus('⚠️ SSID inválido', 'error');
+        showStatus('SSID invalido', 'error');
         return;
       }
       if (!password || password.length < 8 || password.length > 64) {
-        showStatus('⚠️ Contraseña debe tener 8-64 caracteres', 'error');
+        showStatus('Contraseña debe tener 8-64 caracteres', 'error');
         return;
       }
-      if (!pairingCode || pairingCode.length !== 6 || !/^\d{6}$/.test(pairingCode)) {
-        showStatus('⚠️ Código debe ser 6 dígitos', 'error');
+      // pairingCode es opcional: si el usuario escaneó el QR desde la app, viene vacío
+      if (pairingCode && (pairingCode.length !== 6 || !/^\d{6}$/.test(pairingCode))) {
+        showStatus('El código debe ser 6 dígitos (o déjalo vacío si usaste el QR)', 'error');
         return;
       }
 
       submitBtn.disabled = true;
-      showStatus('<span class="spinner"></span>Configurando dispositivo...', 'loading');
+      showStatus('Configurando dispositivo...', 'loading');
 
       try {
         const response = await fetch('/configure', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          timeout: 60000,
           body: JSON.stringify({ ssid, password, pairingCode })
         });
 
-        const data = await response.json();
-
         if (response.ok) {
-          showStatus('✅ Éxito! Dispositivo reiniciando...', 'success');
-          setTimeout(() => { window.location.reload(); }, 3000);
-        } else {
-          showStatus('❌ ' + (data.error || data.message || 'Error en configuración'), 'error');
-          submitBtn.disabled = false;
+          showStatus('Exito. El dispositivo se esta configurando...', 'success');
+          submitBtn.disabled = true;
+          return;
         }
-      } catch (error) {
-        showStatus('❌ Error: ' + error.message, 'error');
+
+        // Si no es OK, intentar parsear el error
+        const data = await response.json().catch(() => ({}));
+        
+        let errorMsg = data.error || data.message || 'Error en configuración';
+        
+        if (response.status === 409) {
+          errorMsg = 'MAC duplicado. Este dispositivo ya esta registrado.';
+        } else if (response.status === 404) {
+          errorMsg = 'No se encontro pre-registro por MAC y/o codigo invalido';
+        } else if (response.status === 400) {
+          errorMsg = 'Error: ' + errorMsg;
+        }
+        
+        showStatus('Error: ' + errorMsg, 'error');
         submitBtn.disabled = false;
+        
+      } catch (error) {
+        showStatus('Configuración enviada. Espera 10-20 segundos.', 'success');
+        submitBtn.disabled = true;
       }
     });
 
@@ -435,19 +600,18 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
  * Intenta conectar a WiFi y hacer pairing con reintentos
  */
 void handleConfigure() {
+  addCorsHeaders();
+
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"Empty request body\"}");
     return;
   }
 
   String body = server.arg("plain");
-
-  // Extraer y validar campos
   String ssid = extractJsonString(body, "ssid");
   String password = extractJsonString(body, "password");
   String pairingCode = extractJsonString(body, "pairingCode");
 
-  // Validaciones
   if (ssid.isEmpty() || ssid.length() > 32) {
     server.send(400, "application/json", "{\"error\":\"Invalid SSID\"}");
     return;
@@ -458,38 +622,35 @@ void handleConfigure() {
     return;
   }
 
-  if (pairingCode.isEmpty() || pairingCode.length() != 6 || !isNumeric(pairingCode)) {
-    server.send(400, "application/json", "{\"error\":\"Pairing code must be 6 digits\"}");
+  // pairingCode es opcional: si viene vacío, el backend lo busca por MAC address
+  if (!pairingCode.isEmpty() && (pairingCode.length() != 6 || !isNumeric(pairingCode))) {
+    server.send(400, "application/json", "{\"error\":\"Pairing code must be 6 digits or empty\"}");
     return;
   }
 
-  logMessage("CONFIG", LOG_INFO, "Configuration request: SSID=%s, Code=%s", ssid.c_str(), pairingCode.c_str());
+  logMessage("CONFIG", LOG_INFO, "Configuration request: SSID=%s", ssid.c_str());
 
-  // Cambiar a modo STA
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   delay(100);
 
-  // Conectar a WiFi con reintentos
-  if (!connectToWifiWithRetry(ssid, password, MAX_WIFI_RETRIES)) {
+  if (!connectToWifiWithRetry(ssid, password, MAX_WIFI_RETRIES, true)) {
     logMessage("CONFIG", LOG_ERROR, "WiFi connection failed");
     WiFi.mode(WIFI_AP);
     server.send(400, "application/json", "{\"error\":\"WiFi connection failed\"}");
     return;
   }
 
-  logMessage("CONFIG", LOG_SUCCESS, "WiFi connected, syncing NTP...");
+  logMessage("CONFIG", LOG_SUCCESS, "WiFi connected");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   delay(2000);
 
-  // Hacer pairing con reintentos
   if (!pairDeviceWithRetry(pairingCode, MAX_PAIRING_RETRIES)) {
     logMessage("CONFIG", LOG_ERROR, "Pairing failed");
     WiFi.mode(WIFI_AP);
-    server.send(400, "application/json", "{\"error\":\"Pairing failed. Invalid or expired code.\"}");
+    server.send(400, "application/json", "{\"error\":\"Pairing failed. If QR flow was used, verify that device was pre-linked by MAC in VATTO app; otherwise use valid backup code.\"}");
     return;
   }
 
-  // Guardar configuración en persistencia
   preferences.begin("pzem_config", false);
   preferences.putInt("deviceId", deviceId);
   preferences.putString("ssid", ssid);
@@ -497,18 +658,16 @@ void handleConfigure() {
   preferences.putString("pairingCode", pairingCode);
   preferences.end();
 
-  logMessage("CONFIG", LOG_SUCCESS, "Configuration saved. DeviceId=%d", deviceId);
-  logMessage("CONFIG", LOG_INFO, "Restarting in normal mode...");
+  lastSuccessfulPairingTime = millis();
+  logMessage("CONFIG", LOG_SUCCESS, "Configuration saved");
 
-  server.send(200, "application/json", "{\"success\":true,\"deviceId\":" + String(deviceId) + "}");
+  // Enviar respuesta JSON (el cliente no intenta procesar como JSON si falla, solo hace reload)
+  server.send(200, "application/json", "{\"success\":true,\"deviceId\":" + String(deviceId) + ",\"message\":\"Device configured successfully. Restarting...\"}");
 
-  delay(1500);
+  delay(2000); // Esperar 2 segundos antes de reiniciar
   ESP.restart();
 }
 
-/**
- * Verificar si un string contiene solo dígitos
- */
 bool isNumeric(String str) {
   for (int i = 0; i < str.length(); i++) {
     if (!isdigit(str[i])) return false;
@@ -516,12 +675,6 @@ bool isNumeric(String str) {
   return true;
 }
 
-
-
-/**
- * Extrae un valor string de un JSON simple
- * Ejemplo: extractJsonString("{\"ssid\":\"MiWiFi\"}", "ssid") -> "MiWiFi"
- */
 String extractJsonString(String json, String key) {
   int startPos = json.indexOf("\"" + key + "\":");
   if (startPos == -1) return "";
@@ -536,33 +689,129 @@ String extractJsonString(String json, String key) {
 }
 
 
-/**
- * MODO NORMAL - Lectura periódica y envío al backend
- */
+bool validateDeviceStillExists() {
+  if (deviceId == 0 || WiFi.status() != WL_CONNECTED) {
+    return true;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_URL_BASE) + "/devices/" + String(deviceId);
+  
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(url);
+  
+  int httpCode = http.GET();
+  http.end();
+  
+  if (httpCode == 200) {
+    consecutiveValidationFailures = 0;
+    return true;
+  }
+  
+  if (httpCode == 404) {
+    consecutiveValidationFailures++;
+    logMessage("VALIDATE", LOG_ERROR, "Device not found (HTTP 404)");
+    return false;
+  }
+  
+  if (httpCode == 409) {
+    consecutiveValidationFailures++;
+    logMessage("VALIDATE", LOG_ERROR, "Device conflict (HTTP 409)");
+    if (consecutiveValidationFailures >= 2) {
+      logMessage("VALIDATE", LOG_ERROR, "Too many failures");
+      return false;
+    }
+    return true;
+  }
+  
+  if (httpCode == 401 || httpCode == 403) {
+    logMessage("VALIDATE", LOG_WARN, "HTTP %d auth issue", httpCode);
+    consecutiveValidationFailures = 0;
+    return true;
+  }
+  
+  consecutiveValidationFailures++;
+  logMessage("VALIDATE", LOG_ERROR, "Validation failed (HTTP %d)", httpCode);
+  
+  // Solo resetear después de 2+ fallos AND si son errores que sugieren eliminación
+  if (consecutiveValidationFailures >= 2) {
+    logMessage("VALIDATE", LOG_ERROR, "Too many validation failures (%d). Device may have been deleted.", consecutiveValidationFailures);
+    return false;
+  }
+  
+  logMessage("VALIDATE", LOG_WARN, "Failure #%d - retry allowed", consecutiveValidationFailures);
+  return true;
+}
+
+bool validateDeviceExists(int devId) {
+  if (devId == 0) return false;
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    return true;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_URL_BASE) + "/devices/" + String(devId);
+  
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(url);
+  
+  int httpCode = http.GET();
+  bool exists = (httpCode == 200);
+  
+  if (!exists) {
+    preferences.begin("pzem_config", false);
+    preferences.clear();
+    preferences.end();
+    deviceId = 0;
+    wifiSSID = "";
+    wifiPassword = "";
+    pairingCodeStored = "";
+    configurationMode = true;
+  }
+  
+  http.end();
+  return exists;
+}
+
 void handleNormalMode() {
-  // Sincronizar WiFi
   unsigned long now = millis();
   
   if (WiFi.status() != WL_CONNECTED) {
     if (now - lastWifiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
-      logMessage("WIFI", LOG_WARN, "Disconnected. Attempting reconnect...");
+      logMessage("WIFI", LOG_WARN, "Disconnected, reconnecting...");
       lastWifiReconnectAttempt = now;
       
-      if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES)) {
-        logMessage("WIFI", LOG_ERROR, "Reconnect failed. Retry in %ds", WIFI_RECONNECT_INTERVAL / 1000);
+      if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES, false)) {
+        logMessage("WIFI", LOG_ERROR, "Reconnect failed");
         return;
       }
     }
     return;
   }
 
-  // Lectura periódica
+  unsigned long validationInterval = (consecutiveValidationFailures > 0) ? 60000 : 300000;
+  
+  if (now - lastDeviceValidationTime >= validationInterval) {
+    lastDeviceValidationTime = now;
+    logMessage("VALIDATE", LOG_INFO, "Checking device");
+    
+    if (!validateDeviceStillExists()) {
+      logMessage("MODE", LOG_ERROR, "Device not found");
+      WiFi.disconnect();
+      resetConfiguration();
+      startConfigurationMode();
+      configurationMode = true;
+      return;
+    }
+  }
+
   if (now - lastReadingTime >= READING_INTERVAL) {
     lastReadingTime = now;
     readAndSendSensorData();
   }
 
-  delay(100); // Evitar busy loop
+  delay(100);
 }
 
 /**
@@ -585,18 +834,10 @@ void readAndSendSensorData() {
   // Validar lecturas
   if (isnan(voltaje) || isnan(corriente) || isnan(potencia)) {
     consecutiveReadingFailures++;
-    logMessage("SENSOR", LOG_ERROR, "Invalid reading (NaN). Failures: %d/5", consecutiveReadingFailures);
-    
-    // Debug: mostrar qué valores son válidos
-    if (!isnan(voltaje)) logMessage("SENSOR", LOG_INFO, "  V=%.2f ✓", voltaje);
-    if (!isnan(corriente)) logMessage("SENSOR", LOG_INFO, "  I=%.3f ✓", corriente);
-    if (!isnan(potencia)) logMessage("SENSOR", LOG_INFO, "  P=%.2f ✓", potencia);
-    if (isnan(voltaje)) logMessage("SENSOR", LOG_WARN, "  V=NaN ✗");
-    if (isnan(corriente)) logMessage("SENSOR", LOG_WARN, "  I=NaN ✗");
-    if (isnan(potencia)) logMessage("SENSOR", LOG_WARN, "  P=NaN ✗");
+    logMessage("SENSOR", LOG_ERROR, "Invalid reading");
     
     if (consecutiveReadingFailures >= 5) {
-      logMessage("SENSOR", LOG_ERROR, "Too many failures. Restarting...");
+      logMessage("SENSOR", LOG_ERROR, "Too many failures, restarting");
       delay(1000);
       ESP.restart();
     }
@@ -605,19 +846,9 @@ void readAndSendSensorData() {
 
   consecutiveReadingFailures = 0;
 
-  // Mostrar datos leídos
-  Serial.println("\n╔══════════════════════════════════════╗");
-  Serial.println("║         MEDICIÓN DEL SENSOR (PZEM)   ║");
-  Serial.printf("║  Voltaje:        %7.2f V           ║\n", voltaje);
-  Serial.printf("║  Corriente:      %7.3f A           ║\n", corriente);
-  Serial.printf("║  Potencia:       %7.2f W           ║\n", potencia);
-  Serial.printf("║  Energía:        %7.2f Wh          ║\n", energia);
-  Serial.printf("║  Frecuencia:     %7.2f Hz          ║\n", frecuencia);
-  Serial.printf("║  Factor Potencia:%7.2f             ║\n", pf);
-  Serial.printf("║  Lectura: %ldms                       ║\n", sensorReadTime);
-  Serial.println("╚══════════════════════════════════════╝\n");
+  Serial.printf("Readings: V=%.2f I=%.3f P=%.2f E=%.2f F=%.2f PF=%.2f\n",
+    voltaje, corriente, potencia, energia, frecuencia, pf);
 
-  // Enviar con reintentos
   if (!sendReadingWithRetry(voltaje, corriente, potencia, energia, frecuencia, pf, MAX_HTTP_RETRIES)) {
     logMessage("SEND", LOG_ERROR, "Failed to send reading after retries");
     consecutiveHttpFailures++;
@@ -626,23 +857,18 @@ void readAndSendSensorData() {
   }
 }
 
-// ============== WIFI ==============
 
-/**
- * Conectar a WiFi con reintentos y backoff exponencial
- */
-bool connectToWifiWithRetry(String ssid, String password, int maxRetries) {
+bool connectToWifiWithRetry(String ssid, String password, int maxRetries, bool keepAP) {
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
     logMessage("WIFI", LOG_INFO, "Connect attempt %d/%d to '%s'", attempt, maxRetries, ssid.c_str());
     
-    if (connectToWiFi(ssid, password)) {
+    if (connectToWiFi(ssid, password, keepAP)) {
       logMessage("WIFI", LOG_SUCCESS, "Connected successfully");
       return true;
     }
 
     if (attempt < maxRetries) {
       unsigned long backoffTime = 1000 * attempt * RETRY_BACKOFF_FACTOR;
-      logMessage("WIFI", LOG_WARN, "Retrying in %lds...", backoffTime / 1000);
       delay(backoffTime);
     }
   }
@@ -653,8 +879,10 @@ bool connectToWifiWithRetry(String ssid, String password, int maxRetries) {
 /**
  * Conectar a WiFi (intento único)
  */
-bool connectToWiFi(String ssid, String password) {
-  WiFi.mode(WIFI_STA);
+bool connectToWiFi(String ssid, String password, bool keepAP) {
+  // keepAP=true: mantiene AP activo mientras conecta STA (flujo /configure)
+  // keepAP=false: conexión normal solo STA
+  WiFi.mode(keepAP ? WIFI_AP_STA : WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
 
   unsigned long startTime = millis();
@@ -670,31 +898,24 @@ bool connectToWiFi(String ssid, String password) {
 
     delay(500);
     Serial.print(".");
-    if (++dotCount % 20 == 0) Serial.print("\n  ");
   }
 
-  Serial.println(" [OK]");
-  logMessage("WIFI", LOG_SUCCESS, "IP: %s", WiFi.localIP().toString().c_str());
+  Serial.println();
+  logMessage("WIFI", LOG_SUCCESS, "Connected");
   return true;
 }
 
 // ============== PAIRING ==============
 
-/**
- * Emparejar con reintentos y backoff
- */
 bool pairDeviceWithRetry(String pairingCode, int maxRetries) {
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
-    logMessage("PAIR", LOG_INFO, "Pairing attempt %d/%d", attempt, maxRetries);
-    
+    logMessage("PAIR", LOG_INFO, "Attempt %d/%d", attempt, maxRetries);
     if (pairDevice(pairingCode)) {
-      logMessage("PAIR", LOG_SUCCESS, "Pairing successful");
+      logMessage("PAIR", LOG_SUCCESS, "OK");
       return true;
     }
-
     if (attempt < maxRetries) {
       unsigned long backoffTime = 2000 * attempt * RETRY_BACKOFF_FACTOR;
-      logMessage("PAIR", LOG_WARN, "Retrying in %lds...", backoffTime / 1000);
       delay(backoffTime);
     }
   }
@@ -702,73 +923,48 @@ bool pairDeviceWithRetry(String pairingCode, int maxRetries) {
   return false;
 }
 
-/**
- * Hacer pairing (intento único)
- */
 bool pairDevice(String pairingCode) {
   if (WiFi.status() != WL_CONNECTED) {
     logMessage("PAIR", LOG_ERROR, "WiFi not connected");
     return false;
   }
 
-  String macAddress = WiFi.macAddress();
+  if (pairingCode.isEmpty()) {
+    logMessage("PAIR", LOG_INFO, "Using QR-first flow (no backup code) - backend will resolve by MAC");
+  } else {
+    logMessage("PAIR", LOG_INFO, "Using backup pairing code");
+  }
+
   HTTPClient http;
   String url = String(BACKEND_URL_BASE) + "/devices/pair";
-
   http.setTimeout(HTTP_TIMEOUT);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
-
+  String macAddress = WiFi.macAddress();
   String payload = "{\"pairingCode\":\"" + pairingCode + "\",\"macAddress\":\"" + macAddress + "\"}";
-
-  logMessage("PAIR", LOG_INFO, "POST %s", url.c_str());
-  logMessage("PAIR", LOG_INFO, "Payload: %s", payload.c_str());
-
   int httpCode = http.POST(payload);
   String response = http.getString();
-
-  logMessage("PAIR", LOG_INFO, "HTTP Code: %d", httpCode);
-  logMessage("PAIR", LOG_INFO, "Response length: %d bytes", response.length());
-  logMessage("PAIR", LOG_INFO, "Response: %s", response.c_str());
-
+  logMessage("PAIR", LOG_INFO, "HTTP %d", httpCode);
   bool success = false;
-
   if (httpCode == 200 || httpCode == 201) {
-    logMessage("PAIR", LOG_SUCCESS, "HTTP %d - Parsing response", httpCode);
-
-    // Buscar "deviceId" en la respuesta
     int deviceIdPos = response.indexOf("deviceId");
     if (deviceIdPos != -1) {
-      // Buscar el número después de "deviceId":
       int colonPos = response.indexOf(":", deviceIdPos);
       if (colonPos != -1) {
         int endPos = response.indexOf(",", colonPos);
         if (endPos == -1) endPos = response.indexOf("}", colonPos);
         if (endPos == -1) endPos = response.length();
-
         String deviceIdStr = response.substring(colonPos + 1, endPos);
         deviceIdStr.trim();
-        // Remove quotes if present
         if (deviceIdStr.startsWith("\"")) deviceIdStr = deviceIdStr.substring(1);
         if (deviceIdStr.endsWith("\"")) deviceIdStr = deviceIdStr.substring(0, deviceIdStr.length() - 1);
-
-        logMessage("PAIR", LOG_INFO, "Extracted deviceIdStr: '%s'", deviceIdStr.c_str());
-        
         int newDeviceId = deviceIdStr.toInt();
-        logMessage("PAIR", LOG_INFO, "Converted to int: %d", newDeviceId);
-
         if (newDeviceId > 0) {
           deviceId = newDeviceId;
-          logMessage("PAIR", LOG_SUCCESS, "DeviceId obtained: %d", deviceId);
+          logMessage("PAIR", LOG_SUCCESS, "DeviceId: %d", deviceId);
           success = true;
-        } else {
-          logMessage("PAIR", LOG_ERROR, "Parsed deviceId is not positive: %d", newDeviceId);
         }
-      } else {
-        logMessage("PAIR", LOG_ERROR, "Could not find colon after deviceId");
       }
-    } else {
-      logMessage("PAIR", LOG_ERROR, "Could not find 'deviceId' in response");
     }
   } else if (httpCode == 400) {
     logMessage("PAIR", LOG_ERROR, "HTTP 400 - Invalid pairing code or already used");
@@ -789,22 +985,17 @@ bool pairDevice(String pairingCode) {
 
 // ============== LECTURAS ==============
 
-/**
- * Enviar lectura con reintentos
- */
 bool sendReadingWithRetry(float voltaje, float corriente, float potencia, 
                            float energia, float frecuencia, float pf, int maxRetries) {
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
-    logMessage("SEND", LOG_INFO, "Send attempt %d/%d", attempt, maxRetries);
-    
+    logMessage("SEND", LOG_INFO, "Attempt %d/%d", attempt, maxRetries);
     if (sendReading(voltaje, corriente, potencia, energia, frecuencia, pf)) {
-      logMessage("SEND", LOG_SUCCESS, "Reading sent successfully");
+      logMessage("SEND", LOG_SUCCESS, "OK");
       return true;
     }
 
     if (attempt < maxRetries) {
       unsigned long backoffTime = 1000 * attempt;
-      logMessage("SEND", LOG_WARN, "Retry in %lds...", backoffTime / 1000);
       delay(backoffTime);
     }
   }
@@ -812,24 +1003,17 @@ bool sendReadingWithRetry(float voltaje, float corriente, float potencia,
   return false;
 }
 
-/**
- * Enviar lectura (intento único) con timeout
- */
 bool sendReading(float voltaje, float corriente, float potencia, 
                  float energia, float frecuencia, float pf) {
   if (WiFi.status() != WL_CONNECTED) {
     logMessage("SEND", LOG_ERROR, "WiFi not connected");
     return false;
   }
-
   HTTPClient http;
   String url = BACKEND_URL_READINGS;
-
   http.setTimeout(HTTP_TIMEOUT);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
-
-  // Construir payload con todos los campos requeridos
   String payload = "{";
   payload += "\"deviceId\":" + String(deviceId) + ",";
   payload += "\"voltage\":" + String(voltaje, 2) + ",";
@@ -839,40 +1023,43 @@ bool sendReading(float voltaje, float corriente, float potencia,
   payload += "\"frequency\":" + String(frecuencia, 2) + ",";
   payload += "\"powerFactor\":" + String(pf, 2);
   payload += "}";
-
-  logMessage("SEND", LOG_INFO, "Payload: %s", payload.c_str());
-  logMessage("SEND", LOG_INFO, "DeviceId value: %d", deviceId);
-
-  unsigned long startTime = millis();
   int httpCode = http.POST(payload);
-  unsigned long sendTime = millis() - startTime;
-
-  logMessage("SEND", LOG_INFO, "HTTP %d (%ldms)", httpCode, sendTime);
-
+  logMessage("SEND", LOG_INFO, "HTTP %d", httpCode);
+  
   if (httpCode == 202 || httpCode == 200) {
-    logMessage("SEND", LOG_SUCCESS, "Backend accepted reading");
+    http.end();
+    return true;
   } else if (httpCode == 400) {
     String response = http.getString();
-    logMessage("SEND", LOG_ERROR, "HTTP 400 - Invalid data: %s", response.c_str());
+    logMessage("SEND", LOG_ERROR, "HTTP 400");
     
-    // Si el deviceId no existe en el backend, resetear configuración
     if (response.indexOf("deviceId") != -1 || response.indexOf("Device not found") != -1) {
-      logMessage("SEND", LOG_WARN, "DeviceId %d not found in backend. Resetting configuration...", deviceId);
+      WiFi.disconnect();
       resetConfiguration();
-      delay(2000);
-      ESP.restart();
+      startConfigurationMode();
+      configurationMode = true;
+      logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
     }
   } else if (httpCode == 401 || httpCode == 403) {
     logMessage("SEND", LOG_ERROR, "HTTP %d - Authentication error (Token invalid?)", httpCode);
   } else if (httpCode == 404) {
-    logMessage("SEND", LOG_ERROR, "HTTP 404 - Device not found in backend. Resetting configuration...");
+    logMessage("SEND", LOG_ERROR, "HTTP 404 - Device not found");
+    WiFi.disconnect();
     resetConfiguration();
-    delay(2000);
-    ESP.restart();
+    startConfigurationMode();
+    configurationMode = true;
+    logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
+  } else if (httpCode == 409) {
+    logMessage("SEND", LOG_ERROR, "HTTP 409 - Conflict");
+    WiFi.disconnect();
+    resetConfiguration();
+    startConfigurationMode();
+    configurationMode = true;
+    logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
   } else if (httpCode == 500) {
-    logMessage("SEND", LOG_ERROR, "HTTP 500 - Backend error. Check server logs");
+    logMessage("SEND", LOG_ERROR, "HTTP 500 - Backend error");
   } else if (httpCode == -1) {
-    logMessage("SEND", LOG_ERROR, "HTTP -1 - Connection timeout (%dms)", HTTP_TIMEOUT);
+    logMessage("SEND", LOG_ERROR, "HTTP -1 - Connection timeout");
   } else {
     logMessage("SEND", LOG_ERROR, "HTTP %d - Unexpected error", httpCode);
   }
@@ -900,18 +1087,14 @@ String getISO8601Time() {
  * Útil cuando el dispositivo fue eliminado del backend
  */
 void resetConfiguration() {
-  logMessage("RESET", LOG_WARN, "Clearing all saved configuration...");
-  
+  logMessage("RESET", LOG_WARN, "Clearing config");
   preferences.begin("pzem_config", false);
-  preferences.clear(); // Borra todo el namespace
+  preferences.clear();
   preferences.end();
-  
-  // Resetear variables globales
   deviceId = 0;
   wifiSSID = "";
   wifiPassword = "";
   pairingCodeStored = "";
   configurationMode = true;
-  
-  logMessage("RESET", LOG_SUCCESS, "Configuration cleared. Will restart in AP mode.");
+  logMessage("RESET", LOG_SUCCESS, "Config cleared");
 }

@@ -65,7 +65,7 @@ export class PostgresDeviceRepository implements IDeviceRepository {
   }
 
   async save(data: CreateDeviceDTO): Promise<Device> {
-    // generate a 6-digit pairing code
+    // generar codigo de emparejamiento de 6 digitos
     const pairingCode = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
 
     const query = `
@@ -289,7 +289,7 @@ export class PostgresDeviceRepository implements IDeviceRepository {
     }));
   }
 
-  // Find device by temporary pairing code (only if not yet active)
+  // Buscar dispositivo por codigo de emparejamiento temporal (solo si aun no esta activo)
   async findByPairingCode(code: string): Promise<Device | null> {
     const query = `SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active, pairing_code FROM devices WHERE pairing_code = $1 LIMIT 1`;
     const res = await pool.query(query, [code]);
@@ -307,7 +307,7 @@ export class PostgresDeviceRepository implements IDeviceRepository {
     );
   }
 
-  // Find device by MAC address
+  // Buscar dispositivo por direccion MAC
   async findByMacAddress(macAddress: string): Promise<Device | null> {
     const query = `SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active, pairing_code FROM devices WHERE mac_address = $1 LIMIT 1`;
     const res = await pool.query(query, [macAddress]);

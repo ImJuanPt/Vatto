@@ -21,7 +21,7 @@ export function calculateInsights(
     .sort((a, b) => b.monthlyKWh - a.monthlyKWh)
     .slice(0, 3);
 
-  // Compute efficiency only for appliances that have a valid monthlyKWh value
+  // Calcular eficiencia solo para dispositivos que tienen un valor monthlyKWh valido
   const evaluable = appliances.filter((appliance) => typeof appliance.monthlyKWh === 'number');
   const appliancesWithinThreshold = evaluable.filter(
     (appliance) => (appliance.monthlyKWh ?? Infinity) <= highUsageThreshold

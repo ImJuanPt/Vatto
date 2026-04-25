@@ -60,7 +60,7 @@ export function RegisterDevicePage({ user, onLogout, onNavigate }: RegisterDevic
     setError("");
 
     try {
-      // Call backend to create device
+      // Llamar al backend para crear dispositivo
       const newDevice = await api.post<any>('/v1/devices', {
         locationId: selectedLocationId!,
         name: deviceName,

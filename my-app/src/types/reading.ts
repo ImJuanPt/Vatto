@@ -1,5 +1,5 @@
 export interface Reading {
-  time: string; // ISO timestamp
+  time: string; // timestamp ISO
   deviceId: number | string;
   powerWatts?: number;
   voltage?: number;

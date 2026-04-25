@@ -1,5 +1,6 @@
 import { Appliance } from "../types/appliance";
 import { calculateInsights } from "../utils/calculateInsights";
+import { useNavigate } from "react-router-dom";
 
 type StatsPanelProps = {
   appliances: Appliance[];
@@ -8,6 +9,7 @@ type StatsPanelProps = {
 
 export function StatsPanel({ appliances, highUsageThreshold }: StatsPanelProps) {
   const insights = calculateInsights(appliances, highUsageThreshold);
+  const navigate = useNavigate();
 
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -25,7 +27,12 @@ export function StatsPanel({ appliances, highUsageThreshold }: StatsPanelProps) 
         <p className="text-sm font-medium text-emerald-200">Top consumidores</p>
         <ul className="mt-3 space-y-2 text-sm text-emerald-100">
           {insights.topConsumers.map((appliance, index) => (
-            <li key={appliance.id} className="flex justify-between">
+            <li 
+              key={appliance.id} 
+              className="flex justify-between cursor-pointer hover:bg-white/10 rounded-lg px-2 py-1 transition-colors"
+              onClick={() => navigate(`/appliance/${appliance.id}`)}
+              title="Ver detalles del dispositivo"
+            >
               <span className="font-semibold text-white">
                 {index + 1}. {appliance.name}
               </span>

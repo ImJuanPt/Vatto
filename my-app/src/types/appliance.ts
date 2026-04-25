@@ -14,7 +14,7 @@ export interface Appliance {
   description: string;
   monthlyHistory: ConsumptionPoint[];
   weeklyUsage: ConsumptionPoint[];
-  // optional metadata from backend
+  // metadatos opcionales del backend
   _meta?: {
     locationId?: number | string;
     macAddress?: string;

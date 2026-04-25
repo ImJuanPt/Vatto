@@ -1,14 +1,14 @@
 import api from './client';
 import { Reading } from '../types/reading';
 
-// Try a few possible endpoints to retrieve readings; backend may vary.
+// Intentar varios endpoints posibles para obtener lecturas; el backend puede variar.
 async function tryEndpoints<T = any>(endpoints: string[]) {
   for (const ep of endpoints) {
     try {
       const res = await api.get<any>(ep);
       if (res) return res;
     } catch (err) {
-      // try next
+      // intentar siguiente
     }
   }
   throw new Error('No endpoints available');
@@ -25,7 +25,7 @@ export async function getLatestReadingForDevice(deviceId: string | number): Prom
   ];
   try {
     const res = await tryEndpoints(candidates);
-    // Normalize common shapes
+    // Normalizar formatos comunes
     if (Array.isArray(res)) return normalize(res[0]);
     if (res && res.latest) return normalize(res.latest);
     if (res && res.time) return normalize(res);
