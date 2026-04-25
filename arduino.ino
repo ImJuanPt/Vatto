@@ -6,10 +6,13 @@
 #include <time.h>
 
 // ============== CONFIGURACIÓN GENERAL ==============
-#define BACKEND_URL_BASE          "http://217.71.203.129/api/v1"
-#define BACKEND_URL_READINGS      "http://217.71.203.129/api/v1/readings"
+#define BACKEND_URL_BASE          "https://vatto.online/api/v1"
+#define BACKEND_URL_READINGS      "https://vatto.online/api/v1/readings"
 #define AP_SSID                   "Vatto-Setup"
 #define AP_PASSWORD               "12345678"
+#define DEVICE_MODEL_ID           "PZEM-ESP32-V1"
+#define QR_LANDING_BASE_URL       "https://vatto.online/qr"
+#define APK_DOWNLOAD_URL          "https://vatto.online/apk/vatto-latest.apk"
 #define RXD2                      16
 #define TXD2                      17
 
@@ -44,6 +47,12 @@ bool validateDeviceStillExists();
 void handleNormalMode();
 void readAndSendSensorData();
 void resetConfiguration();
+void handleInfo();
+void addCorsHeaders();
+String urlEncode(const String& value);
+String buildQrLandingUrl(const String& macAddress);
+String buildProvisioningQrPayload(const String& macAddress);
+void printProvisioningSummary();
 
 // ============== NTP ==============
 const char* ntpServer = "pool.ntp.org";
@@ -86,6 +95,68 @@ void logMessage(const char* tag, LogLevel level, const char* format, ...) {
   }
 
   Serial.printf("[%s] %s%s\n", tag, prefix, buffer);
+}
+
+String urlEncode(const String& value) {
+  String encoded = "";
+  const char* hex = "0123456789ABCDEF";
+
+  for (size_t i = 0; i < value.length(); i++) {
+    unsigned char c = value.charAt(i);
+    bool isUnreserved = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~';
+
+    if (isUnreserved) {
+      encoded += (char)c;
+    } else {
+      encoded += '%';
+      encoded += hex[(c >> 4) & 0x0F];
+      encoded += hex[c & 0x0F];
+    }
+  }
+
+  return encoded;
+}
+
+String buildQrLandingUrl(const String& macAddress) {
+  String url = String(QR_LANDING_BASE_URL);
+  url += "?mac=" + urlEncode(macAddress);
+  url += "&model=" + urlEncode(String(DEVICE_MODEL_ID));
+  return url;
+}
+
+String buildProvisioningQrPayload(const String& macAddress) {
+  String payload = "{";
+  payload += "\"v\":1,";
+  payload += "\"brand\":\"VATTO\",";
+  payload += "\"deviceType\":\"pzem-esp32\",";
+  payload += "\"model\":\"" + String(DEVICE_MODEL_ID) + "\",";
+  payload += "\"mac\":\"" + macAddress + "\",";
+  payload += "\"apSsid\":\"" + String(AP_SSID) + "\",";
+  payload += "\"apIp\":\"192.168.4.1\",";
+  payload += "\"setupUrl\":\"http://192.168.4.1\",";
+  payload += "\"apkUrl\":\"" + String(APK_DOWNLOAD_URL) + "\",";
+  payload += "\"linkUrl\":\"" + buildQrLandingUrl(macAddress) + "\"";
+  payload += "}";
+  return payload;
+}
+
+void printProvisioningSummary() {
+  String staMac = WiFi.macAddress();
+  String apMac = WiFi.softAPmacAddress();
+  String qrUrl = buildQrLandingUrl(staMac);
+  String qrPayload = buildProvisioningQrPayload(staMac);
+
+  Serial.println("\n================= VATTO PROVISIONING DATA =================");
+  Serial.println("Copia y guarda estos datos para etiquetar el medidor:\n");
+  Serial.println("- MAC (STA, para registro): " + staMac);
+  Serial.println("- MAC (AP): " + apMac);
+  Serial.println("- Modelo: " + String(DEVICE_MODEL_ID));
+  Serial.println("- URL QR permanente recomendada: " + qrUrl);
+  Serial.println("- URL descarga APK: " + String(APK_DOWNLOAD_URL));
+  Serial.println("- Payload QR JSON sugerido:");
+  Serial.println(qrPayload);
+  Serial.println("===========================================================\n");
 }
 
 void setup() {
@@ -194,15 +265,68 @@ void startConfigurationMode() {
   IPAddress apIP = WiFi.softAPIP();
   logMessage("AP", LOG_SUCCESS, "Access Point started");
   logMessage("AP", LOG_INFO, "IP: %s", apIP.toString().c_str());
+  printProvisioningSummary();
 
   server.on("/", HTTP_GET, handleWebRoot);
   server.on("/configure", HTTP_POST, handleConfigure);
+  server.on("/info", HTTP_GET, handleInfo);
+
+  // CORS preflight para que el WebView de la app móvil pueda llamar directamente
+  server.on("/configure", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204);
+  });
+  server.on("/info", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204);
+  });
+
   server.onNotFound([]() {
+    addCorsHeaders();
     server.send(404, "text/plain", "Not found");
   });
 
   server.begin();
   logMessage("WEB", LOG_SUCCESS, "Web server started");
+}
+
+// ============================================================
+// CORS: permite que el WebView de la app móvil (Capacitor)
+// llame a http://192.168.4.1 sin bloqueos de origen cruzado
+// ============================================================
+void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+/**
+ * GET /info
+ * Devuelve información del dispositivo en JSON.
+ * La app móvil llama a este endpoint (cuando está conectada al AP Vatto-Setup)
+ * para verificar que está hablando con el ESP32 correcto antes de enviar credenciales.
+ * Respuesta: { "mac": "AA:BB:CC:DD:EE:FF", "model": "PZEM-ESP32-V1",
+ *              "status": "unconfigured" | "configured", "deviceId": 0 }
+ */
+void handleInfo() {
+  addCorsHeaders();
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+
+  String mac = WiFi.softAPmacAddress();
+  String staMac = WiFi.macAddress();
+  String status = (deviceId > 0) ? "configured" : "unconfigured";
+  String qrUrl = buildQrLandingUrl(staMac);
+
+  String json = "{";
+  json += "\"mac\":\"" + mac + "\",";
+  json += "\"staMac\":\"" + staMac + "\",";
+  json += "\"model\":\"" + String(DEVICE_MODEL_ID) + "\",";
+  json += "\"status\":\"" + status + "\",";
+  json += "\"qrUrl\":\"" + qrUrl + "\",";
+  json += "\"deviceId\":" + String(deviceId);
+  json += "}";
+
+  server.send(200, "application/json", json);
 }
 
 /**
@@ -351,7 +475,11 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
   <div class="container">
     <div class="header">
       <h1>⚡ Configuración PZEM</h1>
-      <p>Conecta tu dispositivo al WiFi y vinculalo</p>
+      <p>Ingresa los datos de tu red WiFi. El QR de la app VATTO es ahora el método principal.</p>
+      <div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:6px;font-size:12px;color:#3730a3;text-align:left">
+        📱 <strong>Desde la app VATTO:</strong> Escanea el QR del medidor para vincular por MAC automáticamente.<br>
+        🆘 Si no tienes la app o el QR, usa el código de respaldo aquí abajo.
+      </div>
     </div>
 
     <form id="configForm" novalidate>
@@ -370,10 +498,10 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
       </div>
 
       <div class="form-group">
-        <label for="pairingCode">Código de Vinculación</label>
+        <label for="pairingCode">Código de respaldo <span style="font-weight:400;color:#aaa">(opcional)</span></label>
         <input type="text" id="pairingCode" name="pairingCode" 
-               placeholder="000000" pattern="[0-9]{6}" maxlength="6" required>
-        <div class="info-text">6 dígitos (del dispositivo creado)</div>
+               placeholder="000000" pattern="[0-9]{6}" maxlength="6">
+        <div class="info-text">Solo si <strong>no</strong> escaneaste el QR desde la app VATTO. Si escaneaste el QR, deja este campo vacío.</div>
       </div>
 
       <button type="submit" id="submitBtn">Configurar Dispositivo</button>
@@ -409,8 +537,9 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
         showStatus('Contraseña debe tener 8-64 caracteres', 'error');
         return;
       }
-      if (!pairingCode || pairingCode.length !== 6 || !/^\d{6}$/.test(pairingCode)) {
-        showStatus('Codigo debe ser 6 digitos', 'error');
+      // pairingCode es opcional: si el usuario escaneó el QR desde la app, viene vacío
+      if (pairingCode && (pairingCode.length !== 6 || !/^\d{6}$/.test(pairingCode))) {
+        showStatus('El código debe ser 6 dígitos (o déjalo vacío si usaste el QR)', 'error');
         return;
       }
 
@@ -438,7 +567,7 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
         if (response.status === 409) {
           errorMsg = 'MAC duplicado. Este dispositivo ya esta registrado.';
         } else if (response.status === 404) {
-          errorMsg = 'Codigo de vinculación invalido o expirado';
+          errorMsg = 'No se encontro pre-registro por MAC y/o codigo invalido';
         } else if (response.status === 400) {
           errorMsg = 'Error: ' + errorMsg;
         }
@@ -471,6 +600,8 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
  * Intenta conectar a WiFi y hacer pairing con reintentos
  */
 void handleConfigure() {
+  addCorsHeaders();
+
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"Empty request body\"}");
     return;
@@ -491,8 +622,9 @@ void handleConfigure() {
     return;
   }
 
-  if (pairingCode.isEmpty() || pairingCode.length() != 6 || !isNumeric(pairingCode)) {
-    server.send(400, "application/json", "{\"error\":\"Pairing code must be 6 digits\"}");
+  // pairingCode es opcional: si viene vacío, el backend lo busca por MAC address
+  if (!pairingCode.isEmpty() && (pairingCode.length() != 6 || !isNumeric(pairingCode))) {
+    server.send(400, "application/json", "{\"error\":\"Pairing code must be 6 digits or empty\"}");
     return;
   }
 
@@ -515,7 +647,7 @@ void handleConfigure() {
   if (!pairDeviceWithRetry(pairingCode, MAX_PAIRING_RETRIES)) {
     logMessage("CONFIG", LOG_ERROR, "Pairing failed");
     WiFi.mode(WIFI_AP);
-    server.send(400, "application/json", "{\"error\":\"Pairing failed. Invalid or expired code.\"}");
+    server.send(400, "application/json", "{\"error\":\"Pairing failed. If QR flow was used, verify that device was pre-linked by MAC in VATTO app; otherwise use valid backup code.\"}");
     return;
   }
 
@@ -796,6 +928,13 @@ bool pairDevice(String pairingCode) {
     logMessage("PAIR", LOG_ERROR, "WiFi not connected");
     return false;
   }
+
+  if (pairingCode.isEmpty()) {
+    logMessage("PAIR", LOG_INFO, "Using QR-first flow (no backup code) - backend will resolve by MAC");
+  } else {
+    logMessage("PAIR", LOG_INFO, "Using backup pairing code");
+  }
+
   HTTPClient http;
   String url = String(BACKEND_URL_BASE) + "/devices/pair";
   http.setTimeout(HTTP_TIMEOUT);
