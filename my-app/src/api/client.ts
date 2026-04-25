@@ -7,9 +7,10 @@ export function setAuthToken(token: string | null) {
 }
 
 function buildUrl(path: string, query?: Query) {
-  const base = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
+  const base =
+    (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ?? '/api';
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = new URL(base.replace(/\/$/, '') + normalizedPath);
+  const url = new URL(base.replace(/\/$/, '') + normalizedPath, window.location.origin);
   if (query) {
     if (query instanceof URLSearchParams) url.search = query.toString();
     else Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, String(v)));

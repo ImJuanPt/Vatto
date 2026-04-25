@@ -4,8 +4,8 @@ let socket: Socket | null = null;
 
 export function connectSocket() {
   if (socket) return socket;
-  const apiBase = (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
-  const socketBase = new URL(apiBase).origin;
+  const apiBase = (import.meta.env.VITE_API_URL as string) || '/api';
+  const socketBase = new URL(apiBase, window.location.origin).origin;
 
   socket = io(socketBase, {
     autoConnect: true,
