@@ -5,6 +5,21 @@ import { ProcessDeviceUseCase } from "../../../application/use-cases/ProcessDevi
 export class DeviceController {
   constructor(private ProcessDeviceUseCase: ProcessDeviceUseCase) {}
 
+  private normalizeMac(value: string): string | null {
+    const cleaned = String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/-/g, ':');
+
+    const withColonMatch = cleaned.match(/([0-9A-F]{2}(:[0-9A-F]{2}){5})/);
+    if (withColonMatch) return withColonMatch[1];
+
+    const compactMatch = cleaned.match(/\b([0-9A-F]{12})\b/);
+    if (!compactMatch) return null;
+
+    return compactMatch[1].match(/.{1,2}/g)?.join(':') ?? null;
+  }
+
   list = async (req: Request, res: Response) => {
     try {
       const userId = req.user?.id;
@@ -145,27 +160,35 @@ export class DeviceController {
     try {
       const { pairingCode, macAddress } = req.body;
 
-      if (!pairingCode || !macAddress) {
-        return res.status(400).json({ error: "Missing pairingCode or macAddress" });
+      if (!macAddress) {
+        return res.status(400).json({ error: 'Missing macAddress' });
       }
 
-      // Validar que el MAC no esté usado por otro dispositivo activo
-      const existingDevice = await this.ProcessDeviceUseCase.findByMac(macAddress);
-      if (existingDevice) {
-        console.warn(`[Pairing] MAC ${macAddress} already registered to device ${existingDevice.id}`);
-        return res.status(409).json({ error: "This MAC is already registered to another device. Please delete that device first." });
+      const normalizedMac = this.normalizeMac(String(macAddress));
+      if (!normalizedMac) {
+        return res.status(400).json({ error: 'Invalid macAddress format' });
       }
+
+      const cleanedPairingCode = String(pairingCode || '').trim();
 
       // Buscar el código de vinculación en la tabla de devices pendientes
       // Esto se hace dentro del caso de uso
-      const result = await this.ProcessDeviceUseCase.pairDevice(pairingCode, macAddress);
+      const result = await this.ProcessDeviceUseCase.pairDevice(cleanedPairingCode, normalizedMac);
 
       if (!result) {
-        return res.status(404).json({ error: "Invalid or expired pairing code" });
+        if (!cleanedPairingCode) {
+          return res.status(404).json({ error: 'No pre-linked device found for this MAC' });
+        }
+        return res.status(404).json({ error: 'Invalid or expired pairing code' });
       }
 
       return res.status(200).json(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'MAC_ALREADY_REGISTERED') {
+        return res.status(409).json({
+          error: 'This MAC is already registered to another device. Please delete that device first.',
+        });
+      }
       console.error(error);
       return res.status(500).json({ error: "Internal Server Error" });
     }

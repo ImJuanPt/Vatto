@@ -35,6 +35,9 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
   const [addDeviceMode, setAddDeviceMode] = useState<'byMac' | 'create'>('byMac');
   const [pairingCodeShown, setPairingCodeShown] = useState<string | null>(null);
   const [creatingDevice, setCreatingDevice] = useState(false);
+  const [qrPayloadInput, setQrPayloadInput] = useState("");
+  const [pairingMac, setPairingMac] = useState("");
+  const [pairingByQrLoading, setPairingByQrLoading] = useState(false);
   const [expandedLocations, setExpandedLocations] = useState<
     Record<string, boolean>
   >({});
@@ -175,6 +178,96 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
     setDeviceTypeInput("");
     setAddDeviceMode('byMac');
     setPairingCodeShown(null);
+    setQrPayloadInput("");
+    setPairingMac("");
+  }
+
+  function extractMacFromQrPayload(raw: string): string | null {
+    const safeDecode = (value: string) => {
+      let decoded = value;
+      for (let i = 0; i < 2; i += 1) {
+        try {
+          const once = decodeURIComponent(decoded);
+          if (once === decoded) break;
+          decoded = once;
+        } catch {
+          break;
+        }
+      }
+      return decoded;
+    };
+
+    const normalize = (value: string) => {
+      const decoded = safeDecode(value).trim().replace(/-/g, ':').toUpperCase();
+      const colonMac = decoded.match(/([0-9A-F]{2}(:[0-9A-F]{2}){5})/);
+      if (colonMac) return colonMac[1];
+
+      const compactMac = decoded.match(/\b([0-9A-F]{12})\b/);
+      if (!compactMac) return null;
+      return compactMac[1].match(/.{1,2}/g)?.join(':') ?? null;
+    };
+
+    const cleaned = safeDecode(raw).trim();
+    const embeddedUrl = cleaned.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
+
+    try {
+      const parsed = JSON.parse(cleaned) as { mac?: string; staMac?: string };
+      const fromJson = normalize(parsed.mac || parsed.staMac || '');
+      if (fromJson) return fromJson;
+    } catch {
+      // no era JSON
+    }
+
+    try {
+      const url = new URL(embeddedUrl ?? cleaned);
+      const paramMac = url.searchParams.get('mac') ?? url.searchParams.get('staMac');
+      if (paramMac) {
+        const fromUrl = normalize(paramMac);
+        if (fromUrl) return fromUrl;
+      }
+    } catch {
+      // no era URL directa
+    }
+
+    const queryLikeMac = cleaned.match(/[?&](?:mac|stamac)=([^&\s]+)/i)?.[1];
+    if (queryLikeMac) {
+      const fromQuery = normalize(queryLikeMac);
+      if (fromQuery) return fromQuery;
+    }
+
+    return normalize(cleaned);
+  }
+
+  async function handlePairByQr() {
+    if (!pairingCodeShown) {
+      alert('Primero crea el dispositivo para generar su código de vinculación.');
+      return;
+    }
+
+    if (!pairingMac.trim()) {
+      alert('Extrae o ingresa una MAC válida para vincular.');
+      return;
+    }
+
+    setPairingByQrLoading(true);
+    try {
+      await api.post('/v1/devices/pair', {
+        pairingCode: pairingCodeShown,
+        macAddress: pairingMac.trim(),
+      });
+
+      alert('✅ Dispositivo vinculado por QR correctamente.');
+      setPairingCodeShown(null);
+      setAddingDeviceLocationId(null);
+      setQrPayloadInput('');
+      setPairingMac('');
+      await refreshData();
+    } catch (err: any) {
+      const backendError = err?.response?.data?.error || err?.message || 'No se pudo vincular por QR.';
+      alert(`Error al vincular: ${backendError}`);
+    } finally {
+      setPairingByQrLoading(false);
+    }
   }
 
   function toggleLocationExpanded(locationId: string | number) {
@@ -562,6 +655,52 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                           <div className="rounded-lg border-2 border-emerald-500 bg-emerald-500/20 p-4 mb-3">
                             <p className="text-2xl font-mono font-bold text-emerald-300 tracking-widest">{pairingCodeShown}</p>
                           </div>
+
+                          <div className="rounded-lg border border-white/10 bg-white/5 p-3 mb-3">
+                            <p className="text-sm text-emerald-100 mb-2 font-semibold">Vinculación por QR (recomendado)</p>
+                            <p className="text-xs text-slate-300 mb-2">
+                              Pega el contenido del QR (URL o texto) para extraer la MAC y vincular automáticamente.
+                            </p>
+                            <textarea
+                              value={qrPayloadInput}
+                              onChange={(e) => setQrPayloadInput(e.target.value)}
+                              className="w-full mb-2 rounded px-3 py-2 bg-slate-800 text-white"
+                              placeholder="Ej: https://vatto.online/qr?mac=AA%3ABB%3A..."
+                              rows={3}
+                            />
+
+                            <div className="flex gap-2 mb-2">
+                              <button
+                                onClick={() => {
+                                  const extracted = extractMacFromQrPayload(qrPayloadInput);
+                                  if (!extracted) {
+                                    alert('No se encontró una MAC válida en el contenido del QR.');
+                                    return;
+                                  }
+                                  setPairingMac(extracted);
+                                }}
+                                className="px-3 py-2 rounded bg-emerald-500/30 text-emerald-100"
+                              >
+                                Extraer MAC
+                              </button>
+                            </div>
+
+                            <input
+                              value={pairingMac}
+                              onChange={(e) => setPairingMac(e.target.value.toUpperCase())}
+                              className="w-full mb-2 rounded px-3 py-2 bg-slate-800 text-white"
+                              placeholder="MAC detectada (AA:BB:CC:DD:EE:FF)"
+                            />
+
+                            <button
+                              onClick={handlePairByQr}
+                              disabled={pairingByQrLoading}
+                              className="w-full px-3 py-2 rounded bg-emerald-500 text-white"
+                            >
+                              {pairingByQrLoading ? 'Vinculando...' : 'Vincular por QR'}
+                            </button>
+                          </div>
+
                           <div className="flex gap-2 justify-end">
                             <button onClick={() => { setPairingCodeShown(null); setAddingDeviceLocationId(null); }} className="px-3 py-2 rounded bg-emerald-500">Cerrar</button>
                           </div>

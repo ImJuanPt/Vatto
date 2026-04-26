@@ -229,10 +229,33 @@
       const params = new URLSearchParams(window.location.search);
       const mac = params.get('mac') || '';
       const model = params.get('model') || 'PZEM-ESP32-V1';
-      const apkUrl = 'https://vatto.online/apk/vatto-latest.apk';
+      const apiBase = 'https://vatto.online/api/v1';
+      const apkBaseUrl = 'https://vatto.online/apk/vatto-latest.apk';
       const appUrl = 'https://vatto.online';
 
       const container = document.getElementById('main-content');
+
+      async function registerDeferredLink() {
+        if (!mac) return null;
+
+        try {
+          const response = await fetch(`${apiBase}/deferred-links/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mac, model }),
+          });
+
+          if (!response.ok) return null;
+          return await response.json();
+        } catch {
+          return null;
+        }
+      }
+
+      function buildApkUrl(deferredId) {
+        if (!deferredId) return apkBaseUrl;
+        return `${apkBaseUrl}?dlid=${encodeURIComponent(deferredId)}`;
+      }
 
       if (!mac) {
         container.innerHTML = `
@@ -242,7 +265,7 @@
           <h1>Descarga la app VATTO</h1>
           <p class="subtitle">Registra y monitorea tu consumo eléctrico en tiempo real.</p>
           <div class="actions">
-            <a href="${apkUrl}" class="btn btn-primary">
+            <a href="${apkBaseUrl}" class="btn btn-primary">
               ⬇️ Descargar app VATTO (Android)
             </a>
             <a href="${appUrl}" class="btn btn-secondary" target="_blank">
@@ -252,55 +275,70 @@
         return;
       }
 
-      // Detect if user-agent is Android and we can try deep link
-      const isAndroid = /android/i.test(navigator.userAgent);
-      const deepLink = `vatto://pair?mac=${encodeURIComponent(mac)}&model=${encodeURIComponent(model)}`;
+      (async function renderWithDeferred() {
+        const deferred = await registerDeferredLink();
+        const deferredId = deferred?.id || '';
+        const deferredCode = deferred?.code || '';
+        const isAndroid = /android/i.test(navigator.userAgent);
+        const deepLink = `vatto://pair?mac=${encodeURIComponent(mac)}&model=${encodeURIComponent(model)}${deferredId ? `&dlid=${encodeURIComponent(deferredId)}` : ''}`;
+        const apkUrl = buildApkUrl(deferredId);
 
-      let openAppBtn = '';
-      if (isAndroid) {
-        openAppBtn = `<a href="${deepLink}" class="btn btn-primary" id="open-app-btn">
-          📱 Abrir en app VATTO
-        </a>`;
-      }
+        let openAppBtn = '';
+        if (isAndroid) {
+          openAppBtn = `<a href="${deepLink}" class="btn btn-primary" id="open-app-btn">
+            📱 Abrir en app VATTO
+          </a>`;
+        }
 
-      container.innerHTML = `
-        <h1>Vincular medidor</h1>
-        <p class="subtitle">Escanea este QR desde la app VATTO para vincular el medidor a tu cuenta automáticamente.</p>
+        const fallbackCodeBlock = deferredCode
+          ? `
+          <div style="margin-top:12px;padding:12px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc">
+            <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:4px">Código de recuperación diferida</div>
+            <div style="font-family:'Courier New',monospace;font-size:20px;font-weight:800;letter-spacing:2px;color:#0f172a">${escapeHtml(deferredCode)}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:6px">Si instalas la app después, en onboarding usa este código para recuperar el medidor sin reescanear.</div>
+          </div>`
+          : '';
 
-        <div class="device-badge">
-          <div class="icon">⚡</div>
-          <div class="device-info">
-            <span class="device-label">Medidor detectado</span>
-            <span class="device-mac">${escapeHtml(mac)}</span>
-            <span class="device-model">${escapeHtml(model)}</span>
+        container.innerHTML = `
+          <h1>Vincular medidor</h1>
+          <p class="subtitle">Escanea este QR desde la app VATTO para vincular el medidor a tu cuenta automáticamente.</p>
+
+          <div class="device-badge">
+            <div class="icon">⚡</div>
+            <div class="device-info">
+              <span class="device-label">Medidor detectado</span>
+              <span class="device-mac">${escapeHtml(mac)}</span>
+              <span class="device-model">${escapeHtml(model)}</span>
+            </div>
           </div>
-        </div>
 
-        <div class="actions">
-          ${openAppBtn}
-          <a href="${apkUrl}" class="btn ${isAndroid ? 'btn-secondary' : 'btn-primary'}">
-            ⬇️ Descargar app VATTO (Android)
-          </a>
-          <a href="${appUrl}" class="btn btn-secondary" target="_blank">
-            🌐 Abrir portal web
-          </a>
-        </div>
+          ${fallbackCodeBlock}
 
-        <div class="steps">
-          <div class="steps-title">¿Cómo vincular?</div>
-          <div class="step"><div class="step-num">1</div><div class="step-text">Descarga e instala la app VATTO en tu teléfono Android.</div></div>
-          <div class="step"><div class="step-num">2</div><div class="step-text">Crea tu cuenta o inicia sesión.</div></div>
-          <div class="step"><div class="step-num">3</div><div class="step-text">En <strong>Agregar medidor</strong>, toca "Escanear QR" y apunta al QR del medidor.</div></div>
-          <div class="step"><div class="step-num">4</div><div class="step-text">Sigue las instrucciones para conectarlo a tu WiFi. ¡Listo!</div></div>
-        </div>`;
+          <div class="actions" style="margin-top:12px">
+            ${openAppBtn}
+            <a href="${apkUrl}" class="btn ${isAndroid ? 'btn-secondary' : 'btn-primary'}">
+              ⬇️ Descargar app VATTO (Android)
+            </a>
+            <a href="${appUrl}" class="btn btn-secondary" target="_blank">
+              🌐 Abrir portal web
+            </a>
+          </div>
 
-      // Auto deep-link on Android after a short delay
-      if (isAndroid) {
-        setTimeout(function () {
-          const btn = document.getElementById('open-app-btn');
-          if (btn) btn.click();
-        }, 800);
-      }
+          <div class="steps">
+            <div class="steps-title">¿Cómo vincular?</div>
+            <div class="step"><div class="step-num">1</div><div class="step-text">Descarga e instala la app VATTO en tu teléfono Android.</div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-text">Crea tu cuenta o inicia sesión.</div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-text">En <strong>Agregar medidor</strong>, la app intentará recuperar el medidor automáticamente.</div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-text">Si no lo detecta, escanea el QR o usa el código de recuperación mostrado arriba.</div></div>
+          </div>`;
+
+        if (isAndroid) {
+          setTimeout(function () {
+            const btn = document.getElementById('open-app-btn');
+            if (btn) btn.click();
+          }, 800);
+        }
+      })();
 
       function escapeHtml(str) {
         return str.replace(/[&<>"']/g, function (c) {

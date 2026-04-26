@@ -48,7 +48,12 @@ export class PostgresDeviceRepository implements IDeviceRepository {
   }
 
   async findByMac(mac: string): Promise<Device | null> {
-    const query = `SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active FROM devices WHERE lower(mac_address) = lower($1) LIMIT 1`;
+    const query = `
+      SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active
+      FROM devices
+      WHERE regexp_replace(lower(coalesce(mac_address, '')), '[^0-9a-f]', '', 'g') = regexp_replace(lower($1), '[^0-9a-f]', '', 'g')
+      LIMIT 1
+    `;
     const res = await pool.query(query, [mac]);
     if (res.rows.length === 0) return null;
     const row = res.rows[0];
@@ -309,7 +314,12 @@ export class PostgresDeviceRepository implements IDeviceRepository {
 
   // Buscar dispositivo por direccion MAC
   async findByMacAddress(macAddress: string): Promise<Device | null> {
-    const query = `SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active, pairing_code FROM devices WHERE mac_address = $1 LIMIT 1`;
+    const query = `
+      SELECT id, location_id, name, device_type, max_watts_threshold, mac_address, is_active, pairing_code
+      FROM devices
+      WHERE regexp_replace(lower(coalesce(mac_address, '')), '[^0-9a-f]', '', 'g') = regexp_replace(lower($1), '[^0-9a-f]', '', 'g')
+      LIMIT 1
+    `;
     const res = await pool.query(query, [macAddress]);
     if (res.rows.length === 0) return null;
     const row = res.rows[0];
@@ -326,7 +336,17 @@ export class PostgresDeviceRepository implements IDeviceRepository {
   }
 
   async updateMacAddress(deviceId: number, macAddress: string): Promise<boolean> {
-    const query = `UPDATE devices SET mac_address = $1 WHERE id = $2`;
+    const query = `
+      UPDATE devices d
+      SET mac_address = $1
+      WHERE d.id = $2
+        AND NOT EXISTS (
+          SELECT 1
+          FROM devices other
+          WHERE other.id <> $2
+            AND regexp_replace(lower(coalesce(other.mac_address, '')), '[^0-9a-f]', '', 'g') = regexp_replace(lower($1), '[^0-9a-f]', '', 'g')
+        )
+    `;
     const res = await pool.query(query, [macAddress, deviceId]);
     return (res.rowCount ?? 0) > 0;
   }

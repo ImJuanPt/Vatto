@@ -21,12 +21,15 @@ import { createReadingRoutes } from "./infrastructure/api/routes/reading.routes"
 import { createLocationRoutes } from "./infrastructure/api/routes/location.routes";
 import { createAuthRoutes } from "./infrastructure/api/routes/auth.routes";
 import { createRecommendationRoutes } from "./infrastructure/api/routes/recommendation.routes";
+import { createDeferredLinkRoutes } from "./infrastructure/api/routes/deferred-link.routes";
 
 import { ReadingController } from "./infrastructure/api/controllers/ReadingController";
 import { DeviceController } from "./infrastructure/api/controllers/DeviceController";
 import { LocationController } from "./infrastructure/api/controllers/LocationController";
 import { AuthController } from "./infrastructure/api/controllers/AuthController";
 import { RecommendationController } from "./infrastructure/api/controllers/RecommendationController";
+import { DeferredLinkController } from "./infrastructure/api/controllers/DeferredLinkController";
+import { DeferredLinkStore } from "./infrastructure/database/DeferredLinkStore";
 
 import { ProcessReadingUseCase } from "./application/use-cases/ProcessReadingUseCase";
 import { ProcessDeviceUseCase } from "./application/use-cases/ProcessDeviceUseCase";
@@ -36,6 +39,9 @@ import { ProcessAuthUseCase } from "./application/use-cases/ProcessAuthUseCase";
 async function bootstrap() {
   const app = express();
   const server = http.createServer(app);
+
+  // Use X-Forwarded-* headers from nginx to resolve real client IPs
+  app.set('trust proxy', true);
 
   app.use(express.json());
 
@@ -78,6 +84,8 @@ async function bootstrap() {
   const locationController = new LocationController(processLocationUseCase);
   const authController = new AuthController(processAuthUseCase);
   const recommendationController = new RecommendationController();
+  const deferredLinkStore = new DeferredLinkStore();
+  const deferredLinkController = new DeferredLinkController(deferredLinkStore);
 
   // Iniciar scheduler para limpiar dispositivos sin pairing después de 60 minutos
   const deviceCleanupScheduler = new DeviceCleanupScheduler(deviceRepo);
@@ -90,6 +98,7 @@ async function bootstrap() {
   app.post('/api/v1/readings', (req, res) => readingController.receiveReading(req as any, res as any));
 
   app.use('/api/v1/auth', createAuthRoutes(authController));
+  app.use('/api/v1/deferred-links', createDeferredLinkRoutes(deferredLinkController));
 
   const protectedRouter = Router();
   protectedRouter.use(authMiddleware);

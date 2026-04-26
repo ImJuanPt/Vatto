@@ -206,42 +206,83 @@ export class ProcessDeviceUseCase {
    */
   async pairDevice(pairingCode: string, macAddress: string) {
     try {
-      // Buscar el device pendiente por código de vinculación
-      // El código se genera cuando el usuario crea un device en la app
-      // y se almacena temporalmente (ej: 30 minutos de validez)
-      
-      let device = await (this.deviceRepo as any).findByPairingCode(pairingCode);
-      
-      // Si no se encuentra por pairing code, buscar por MAC address
-      // (podría ser un dispositivo que ya se emparejó previamente)
-      if (!device) {
-        device = await (this.deviceRepo as any).findByMacAddress(macAddress);
-        
-        if (device) {
-          console.log(`[Pairing] Device ${device.id} already paired with MAC ${macAddress}`);
+      const normalizeMac = (value: string) => {
+        const cleaned = String(value || '')
+          .trim()
+          .toUpperCase()
+          .replace(/-/g, ':');
+
+        const withColonMatch = cleaned.match(/([0-9A-F]{2}(:[0-9A-F]{2}){5})/);
+        if (withColonMatch) return withColonMatch[1];
+
+        const compactMatch = cleaned.match(/\b([0-9A-F]{12})\b/);
+        if (!compactMatch) return null;
+
+        return compactMatch[1].match(/.{1,2}/g)?.join(':') ?? null;
+      };
+
+      const normalizedMac = normalizeMac(macAddress);
+      if (!normalizedMac) return null;
+
+      const cleanedPairingCode = String(pairingCode || '').trim();
+      const existingByMac = await (this.deviceRepo as any).findByMacAddress(normalizedMac);
+
+      // Flujo QR-first + firmware: sin código, solo debe resolver si ya estaba pareado por MAC.
+      if (!cleanedPairingCode) {
+        if (existingByMac) {
+          console.log(`[Pairing] Device ${existingByMac.id} already paired with MAC ${normalizedMac}`);
           return {
-            deviceId: device.id,
-            message: "Device already paired"
+            deviceId: existingByMac.id,
+            message: 'Device already paired',
           };
         }
-        
-        console.warn(`[Pairing] Invalid pairing code: ${pairingCode}`);
         return null;
       }
 
-      // Actualizar el MAC address del device
-      await (this.deviceRepo as any).updateMacAddress(device.id, macAddress);
+      const deviceByCode = await (this.deviceRepo as any).findByPairingCode(cleanedPairingCode);
 
-      // Marcar como activo
-      await (this.deviceRepo as any).setActive(device.id, true);
+      if (!deviceByCode) {
+        if (existingByMac) {
+          console.log(`[Pairing] Device ${existingByMac.id} already paired with MAC ${normalizedMac}`);
+          return {
+            deviceId: existingByMac.id,
+            message: 'Device already paired',
+          };
+        }
 
-      console.log(`[Pairing] Device ${device.id} paired with MAC ${macAddress}`);
+        console.warn(`[Pairing] Invalid pairing code: ${cleanedPairingCode}`);
+        return null;
+      }
+
+      if (existingByMac && existingByMac.id !== deviceByCode.id) {
+        throw new Error('MAC_ALREADY_REGISTERED');
+      }
+
+      if (existingByMac && existingByMac.id === deviceByCode.id) {
+        await (this.deviceRepo as any).setActive(deviceByCode.id, true);
+        return {
+          deviceId: deviceByCode.id,
+          message: 'Device already paired',
+        };
+      }
+
+      const updated = await (this.deviceRepo as any).updateMacAddress(deviceByCode.id, normalizedMac);
+      if (!updated) {
+        throw new Error('MAC_ALREADY_REGISTERED');
+      }
+
+      await (this.deviceRepo as any).setActive(deviceByCode.id, true);
+
+      console.log(`[Pairing] Device ${deviceByCode.id} paired with MAC ${normalizedMac}`);
 
       return {
-        deviceId: device.id,
-        message: "Device paired successfully"
+        deviceId: deviceByCode.id,
+        message: 'Device paired successfully',
       };
     } catch (err) {
+      if (err instanceof Error && err.message === 'MAC_ALREADY_REGISTERED') {
+        throw err;
+      }
       console.error('[Pairing] Error:', err);
       return null;
     }
