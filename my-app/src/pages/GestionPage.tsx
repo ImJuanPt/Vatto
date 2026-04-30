@@ -34,6 +34,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
   const [deviceTypeInput, setDeviceTypeInput] = useState("");
   const [addDeviceMode, setAddDeviceMode] = useState<'byMac' | 'create'>('byMac');
   const [pairingCodeShown, setPairingCodeShown] = useState<string | null>(null);
+  const [createdDeviceId, setCreatedDeviceId] = useState<number | null>(null);
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [qrPayloadInput, setQrPayloadInput] = useState("");
   const [pairingMac, setPairingMac] = useState("");
@@ -178,8 +179,21 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
     setDeviceTypeInput("");
     setAddDeviceMode('byMac');
     setPairingCodeShown(null);
+    setCreatedDeviceId(null);
     setQrPayloadInput("");
     setPairingMac("");
+  }
+
+  async function cleanupPendingDevice() {
+    if (!createdDeviceId) return;
+    try {
+      await api.del(`/v1/devices/${createdDeviceId}`);
+    } catch (err) {
+      console.warn('No se pudo limpiar el dispositivo pendiente:', err);
+    } finally {
+      setCreatedDeviceId(null);
+      setPairingCodeShown(null);
+    }
   }
 
   function extractMacFromQrPayload(raw: string): string | null {
@@ -258,13 +272,22 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
 
       alert('✅ Dispositivo vinculado por QR correctamente.');
       setPairingCodeShown(null);
+      setCreatedDeviceId(null);
       setAddingDeviceLocationId(null);
       setQrPayloadInput('');
       setPairingMac('');
       await refreshData();
     } catch (err: any) {
-      const backendError = err?.response?.data?.error || err?.message || 'No se pudo vincular por QR.';
-      alert(`Error al vincular: ${backendError}`);
+      const status = err?.status;
+      const backendError = err?.body?.error || err?.response?.data?.error || err?.message;
+
+      if (status === 409) {
+        await cleanupPendingDevice();
+        alert('La MAC ingresada ya está registrada en otro dispositivo. No se realizó el registro.');
+        return;
+      }
+
+      alert(`Error al vincular: ${backendError || 'No se pudo vincular por QR.'}`);
     } finally {
       setPairingByQrLoading(false);
     }
@@ -635,6 +658,7 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                                   });
                                   // preferir pairingCode del backend, de lo contrario generar localmente
                                   const code = res?.pairingCode || String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+                                  setCreatedDeviceId(Number(res?.id));
                                   setPairingCodeShown(code);
                                 } catch (err) {
                                   console.error('create device failed', err);
@@ -651,7 +675,9 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                         </>
                       ) : (
                         <div>
-                          <p className="text-sm text-emerald-100 mb-2">Dispositivo creado. Código de emparejamiento:</p>
+                          <p className="text-sm text-amber-100 mb-2">
+                            Paso 1 de 2: código generado. El dispositivo aún <span className="font-semibold">NO</span> está vinculado hasta completar el QR.
+                          </p>
                           <div className="rounded-lg border-2 border-emerald-500 bg-emerald-500/20 p-4 mb-3">
                             <p className="text-2xl font-mono font-bold text-emerald-300 tracking-widest">{pairingCodeShown}</p>
                           </div>
@@ -702,7 +728,15 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                           </div>
 
                           <div className="flex gap-2 justify-end">
-                            <button onClick={() => { setPairingCodeShown(null); setAddingDeviceLocationId(null); }} className="px-3 py-2 rounded bg-emerald-500">Cerrar</button>
+                            <button
+                              onClick={async () => {
+                                await cleanupPendingDevice();
+                                setAddingDeviceLocationId(null);
+                              }}
+                              className="px-3 py-2 rounded bg-emerald-500"
+                            >
+                              Cerrar
+                            </button>
                           </div>
                         </div>
                       )}

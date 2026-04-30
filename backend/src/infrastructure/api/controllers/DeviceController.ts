@@ -186,7 +186,7 @@ export class DeviceController {
     } catch (error) {
       if (error instanceof Error && error.message === 'MAC_ALREADY_REGISTERED') {
         return res.status(409).json({
-          error: 'This MAC is already registered to another device. Please delete that device first.',
+          error: 'Esta MAC ya está registrada en otro dispositivo. Elimina o desvincula ese dispositivo antes de continuar.',
         });
       }
       console.error(error);
