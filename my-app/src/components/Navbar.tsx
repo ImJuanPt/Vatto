@@ -17,7 +17,7 @@ const navItems = [
 
 export function Navbar({ user, onLogout }: NavbarProps) {
   return (
-    <nav className="grid w-full grid-cols-1 items-center gap-3 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 shadow-lg backdrop-blur-md sm:grid-cols-[auto_1fr_auto]">
+    <nav className="grid w-full grid-cols-1 items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 shadow-lg backdrop-blur-md sm:grid-cols-[auto_1fr_auto]">
       {/* Logo y Marca */}
       <NavLink to="/" className="flex min-w-0 items-center gap-2 overflow-hidden hover:opacity-80 transition-opacity">
         <img
@@ -32,7 +32,7 @@ export function Navbar({ user, onLogout }: NavbarProps) {
       </NavLink>
 
       {/* Navegación Central */}
-      <div className="flex w-full flex-wrap items-center justify-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 p-1 text-sm font-medium text-emerald-100 sm:w-auto sm:justify-center sm:mx-4">
+      <div className="flex w-full flex-wrap items-center justify-center gap-1 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 p-1 text-sm font-medium text-emerald-100 sm:w-auto sm:justify-center sm:mx-4">
         {navItems.map((item) => (
           <NavLink
             key={item.id}
