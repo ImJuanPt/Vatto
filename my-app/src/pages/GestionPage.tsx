@@ -391,19 +391,19 @@ export function GestionPage({ user, onLogout }: GestionPageProps) {
                     key={loc.id}
                     className="rounded-xl border border-white/10 bg-white/5 p-4"
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <h3 className="text-white font-semibold">
                           {loc.name}{" "}
                           <span className="text-sm text-emerald-200">
                             ({deviceList.length})
                           </span>
                         </h3>
-                        <p className="text-xs text-emerald-100">
+                        <p className="truncate text-xs text-emerald-100">
                           {loc.address}
                         </p>
                       </div>
-                      <div className="flex gap-2 items-center">
+                      <div className="flex flex-wrap items-center gap-2 justify-end">
                         <button
                           onClick={() => toggleLocationExpanded(loc.id)}
                           className="flex items-center gap-2 text-xs rounded bg-white/5 px-2 py-1 text-emerald-100 cursor-pointer transform transition duration-200 hover:scale-105 active:scale-95 focus:outline-none"

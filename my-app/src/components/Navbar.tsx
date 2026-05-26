@@ -17,15 +17,15 @@ const navItems = [
 
 export function Navbar({ user, onLogout }: NavbarProps) {
   return (
-    <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 shadow-lg backdrop-blur-md">
+    <nav className="grid w-full grid-cols-1 items-center gap-3 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 shadow-lg backdrop-blur-md sm:grid-cols-[auto_1fr_auto]">
       {/* Logo y Marca */}
-      <NavLink to="/" className="flex min-w-0 items-center gap-2 hover:opacity-80 transition-opacity">
+      <NavLink to="/" className="flex min-w-0 items-center gap-2 overflow-hidden hover:opacity-80 transition-opacity">
         <img
           src="/LogoVatto.png"
           alt="Vatto Logo"
           className="h-12 w-12 sm:h-20 sm:w-20 object-contain"
         />
-        <div className="min-w-0 flex flex-col justify-center">
+        <div className="min-w-0 flex flex-col justify-center overflow-hidden">
           <p className="truncate text-base font-semibold text-white leading-tight">Vatto</p>
           <p className="truncate text-xs text-emerald-100 leading-tight">Monitor inteligente</p>
         </div>
@@ -49,7 +49,7 @@ export function Navbar({ user, onLogout }: NavbarProps) {
       </div>
 
       {/* Avatar Usuario */}
-      <div className="min-w-0">
+      <div className="flex w-full justify-end sm:w-auto">
         <UserAvatar user={user} onLogout={onLogout} />
       </div>
     </nav>
