@@ -1,8 +1,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <PZEM004Tv30.h>
 #include <Preferences.h>
+#include <WiFiProv.h>
 #include <time.h>
 
 // ============== CONFIGURACIÓN GENERAL ==============
@@ -13,6 +15,7 @@
 #define DEVICE_MODEL_ID           "PZEM-ESP32-V1"
 #define QR_LANDING_BASE_URL       "https://vatto.online/qr"
 #define APK_DOWNLOAD_URL          "https://vatto.online/apk/vatto-latest.apk"
+#define LOCAL_SETUP_HOST          "configuracion.local"
 #define RXD2                      16
 #define TXD2                      17
 
@@ -23,6 +26,11 @@
 #define SENSOR_READ_TIMEOUT       5000     // 5 segundos máximo para leer sensor
 #define WIFI_RECONNECT_INTERVAL   30000    // 30 segundos entre reintentos de reconexión
 #define PZEM_BAUD_RATE            9600
+
+// ============== CONSTANTES BLE PROVISIONING ==============
+#define BLE_PROV_POP              "12345678"
+#define BLE_SERVICE_PREFIX        "VATTO_"
+#define BLE_PAIRING_RETRY_INTERVAL 5000     // 5 segundos entre reintentos de pairing BLE
 
 // ============== CONSTANTES DE REINTENTOS ==============
 #define MAX_WIFI_RETRIES          3
@@ -36,7 +44,10 @@ Preferences preferences;
 // ============== HARDWARE ==============
 PZEM004Tv30 pzem(Serial2, RXD2, TXD2);
 WebServer server(80);
+DNSServer dnsServer;
 bool sensorHealthy = false;
+bool bleProvisioningStarted = false;
+unsigned long lastBlePairingAttempt = 0;
 
 // ============== FORWARD DECLARATIONS ==============
 bool connectToWiFi(String ssid, String password, bool keepAP);
@@ -53,6 +64,8 @@ String urlEncode(const String& value);
 String buildQrLandingUrl(const String& macAddress);
 String buildProvisioningQrPayload(const String& macAddress);
 void printProvisioningSummary();
+void startBleProvisioning();
+void handleBleAutoPairing();
 
 // ============== NTP ==============
 const char* ntpServer = "pool.ntp.org";
@@ -65,6 +78,8 @@ String wifiSSID = "";
 String wifiPassword = "";
 String pairingCodeStored = "";
 bool configurationMode = true;
+bool useStoredWifiCreds = false;
+bool forceReconfigurationMode = false;
 
 // ============== MÉTRICAS Y DEBUG ==============
 unsigned long lastReadingTime = 0;
@@ -134,7 +149,8 @@ String buildProvisioningQrPayload(const String& macAddress) {
   payload += "\"mac\":\"" + macAddress + "\",";
   payload += "\"apSsid\":\"" + String(AP_SSID) + "\",";
   payload += "\"apIp\":\"192.168.4.1\",";
-  payload += "\"setupUrl\":\"http://192.168.4.1\",";
+  payload += "\"setupUrl\":\"http://" + String(LOCAL_SETUP_HOST) + "\",";
+  payload += "\"setupUrlFallback\":\"http://192.168.4.1\",";
   payload += "\"apkUrl\":\"" + String(APK_DOWNLOAD_URL) + "\",";
   payload += "\"linkUrl\":\"" + buildQrLandingUrl(macAddress) + "\"";
   payload += "}";
@@ -152,6 +168,8 @@ void printProvisioningSummary() {
   Serial.println("- MAC (STA, para registro): " + staMac);
   Serial.println("- MAC (AP): " + apMac);
   Serial.println("- Modelo: " + String(DEVICE_MODEL_ID));
+  Serial.println("- URL local setup: http://" + String(LOCAL_SETUP_HOST));
+  Serial.println("- URL fallback setup: http://192.168.4.1");
   Serial.println("- URL QR permanente recomendada: " + qrUrl);
   Serial.println("- URL descarga APK: " + String(APK_DOWNLOAD_URL));
   Serial.println("- Payload QR JSON sugerido:");
@@ -170,6 +188,7 @@ void setup() {
   wifiSSID = preferences.getString("ssid", "");
   wifiPassword = preferences.getString("password", "");
   pairingCodeStored = preferences.getString("pairingCode", "");
+  useStoredWifiCreds = preferences.getBool("useStoredWifiCreds", false);
   preferences.end();
   logMessage("INIT", LOG_INFO, "Configuration loaded: deviceId=%d", deviceId);
 
@@ -196,12 +215,55 @@ void setup() {
       sensorHealthy = false;
       logMessage("PZEM", LOG_WARN, "Sensor not responding - check connections");
     }
+    if (useStoredWifiCreds || wifiSSID.isEmpty()) {
+      logMessage("WIFI", LOG_INFO, "Connecting using stored WiFi credentials (BLE/NVS)");
+    } else {
       logMessage("WIFI", LOG_INFO, "Connecting to: %s", wifiSSID.c_str());
+    }
     
-    if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES, false)) {
+    String connectSsid = (useStoredWifiCreds || wifiSSID.isEmpty()) ? "" : wifiSSID;
+    String connectPassword = (useStoredWifiCreds || wifiSSID.isEmpty()) ? "" : wifiPassword;
+
+    if (!connectToWifiWithRetry(connectSsid, connectPassword, MAX_WIFI_RETRIES, false)) {
       logMessage("WIFI", LOG_ERROR, "WiFi failed after %d attempts", MAX_WIFI_RETRIES);
-      delay(3000);
-      ESP.restart();
+
+      if (!useStoredWifiCreds) {
+        logMessage("WIFI", LOG_WARN, "Trying fallback using NVS stored credentials");
+        if (connectToWifiWithRetry("", "", 1, false)) {
+          useStoredWifiCreds = true;
+          preferences.begin("pzem_config", false);
+          preferences.putBool("useStoredWifiCreds", true);
+          preferences.end();
+          logMessage("WIFI", LOG_SUCCESS, "Fallback credentials worked");
+        }
+      }
+
+      if (WiFi.status() != WL_CONNECTED) {
+        logMessage("MODE", LOG_WARN, "Entering recovery mode (AP + local setup)");
+
+        // Recovery real: limpiar credenciales WiFi provisionadas para permitir
+        // un nuevo provisioning BLE/AP en esta misma sesión.
+        WiFi.disconnect(true, true);
+        delay(200);
+
+        preferences.begin("pzem_config", false);
+        preferences.putString("ssid", "");
+        preferences.putString("password", "");
+        preferences.putString("pairingCode", "");
+        preferences.putBool("useStoredWifiCreds", false);
+        preferences.end();
+
+        wifiSSID = "";
+        wifiPassword = "";
+        pairingCodeStored = "";
+        useStoredWifiCreds = false;
+
+        logMessage("RECOVERY", LOG_INFO, "WiFi credentials cleared. AP + BLE reprovisioning enabled");
+        configurationMode = true;
+        forceReconfigurationMode = true;
+        startConfigurationMode();
+        return;
+      }
     }
     
     logMessage("NTP", LOG_INFO, "Syncing time");
@@ -230,12 +292,12 @@ void setup() {
       }
       
       if (!validated) {
-        logMessage("VALIDATE", LOG_ERROR, "Device validation failed");
+        logMessage("VALIDATE", LOG_ERROR, "Device deleted from platform - resetting to factory");
         WiFi.disconnect();
         resetConfiguration();
-        configurationMode = true;
-        startConfigurationMode();
-        return;  // Salir del setup, enter loop() en modo configuración
+        delay(500);
+        ESP.restart();   // Arranque limpio → boot en modo AP sin configuración
+        return;
       }
       
       logMessage("VALIDATE", LOG_SUCCESS, "Device %d validated successfully", deviceId);
@@ -246,6 +308,8 @@ void setup() {
 void loop() {
   if (configurationMode) {
     server.handleClient();
+    dnsServer.processNextRequest();
+    handleBleAutoPairing();
     delay(50);
   } else {
     handleNormalMode();
@@ -265,6 +329,11 @@ void startConfigurationMode() {
   IPAddress apIP = WiFi.softAPIP();
   logMessage("AP", LOG_SUCCESS, "Access Point started");
   logMessage("AP", LOG_INFO, "IP: %s", apIP.toString().c_str());
+  logMessage("DNS", LOG_INFO, "Local host enabled: http://%s", LOCAL_SETUP_HOST);
+
+  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+  dnsServer.start(53, "*", apIP);  // Captive DNS: cualquier host -> 192.168.4.1
+
   printProvisioningSummary();
 
   server.on("/", HTTP_GET, handleWebRoot);
@@ -282,12 +351,18 @@ void startConfigurationMode() {
   });
 
   server.onNotFound([]() {
+    if (server.method() == HTTP_GET) {
+      handleWebRoot();
+      return;
+    }
     addCorsHeaders();
     server.send(404, "text/plain", "Not found");
   });
 
   server.begin();
   logMessage("WEB", LOG_SUCCESS, "Web server started");
+
+  startBleProvisioning();
 }
 
 // ============================================================
@@ -335,7 +410,7 @@ void handleInfo() {
  */
 void handleWebRoot() {
   // Si ya está configurado, mostrar página de éxito
-  if (deviceId > 0) {
+  if (deviceId > 0 && !forceReconfigurationMode) {
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     server.sendHeader("Pragma", "no-cache");
     server.sendHeader("Expires", "0");
@@ -362,7 +437,7 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "0");
   
-  String html = R"(
+  String html = R"HTML(
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -478,6 +553,8 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
       <p>Ingresa los datos de tu red WiFi. El QR de la app VATTO es ahora el método principal.</p>
       <div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:6px;font-size:12px;color:#3730a3;text-align:left">
         📱 <strong>Desde la app VATTO:</strong> Escanea el QR del medidor para vincular por MAC automáticamente.<br>
+        📶 O usa BLE: en la app selecciona <strong>BLE (recomendado)</strong> para configurar por Bluetooth sin entrar al portal.<br>
+        🌐 O entra a <strong>http://configuracion.local</strong> (o <strong>http://192.168.4.1</strong> si no abre).<br>
         🆘 Si no tienes la app o el QR, usa el código de respaldo aquí abajo.
       </div>
     </div>
@@ -589,7 +666,7 @@ min-height:100vh;display:flex;align-items:center;justify-content:center;padding:
   </script>
 </body>
 </html>
-  )";
+  )HTML";
 
   server.send(200, "text/html; charset=utf-8", html);
 }
@@ -656,7 +733,10 @@ void handleConfigure() {
   preferences.putString("ssid", ssid);
   preferences.putString("password", password);
   preferences.putString("pairingCode", pairingCode);
+  preferences.putBool("useStoredWifiCreds", false);
   preferences.end();
+
+  forceReconfigurationMode = false;
 
   lastSuccessfulPairingTime = millis();
   logMessage("CONFIG", LOG_SUCCESS, "Configuration saved");
@@ -782,7 +862,10 @@ void handleNormalMode() {
       logMessage("WIFI", LOG_WARN, "Disconnected, reconnecting...");
       lastWifiReconnectAttempt = now;
       
-      if (!connectToWifiWithRetry(wifiSSID, wifiPassword, MAX_WIFI_RETRIES, false)) {
+      String reconnectSsid = (useStoredWifiCreds || wifiSSID.isEmpty()) ? "" : wifiSSID;
+      String reconnectPassword = (useStoredWifiCreds || wifiSSID.isEmpty()) ? "" : wifiPassword;
+
+      if (!connectToWifiWithRetry(reconnectSsid, reconnectPassword, MAX_WIFI_RETRIES, false)) {
         logMessage("WIFI", LOG_ERROR, "Reconnect failed");
         return;
       }
@@ -797,11 +880,11 @@ void handleNormalMode() {
     logMessage("VALIDATE", LOG_INFO, "Checking device");
     
     if (!validateDeviceStillExists()) {
-      logMessage("MODE", LOG_ERROR, "Device not found");
+      logMessage("MODE", LOG_ERROR, "Device deleted from platform - resetting to factory");
       WiFi.disconnect();
       resetConfiguration();
-      startConfigurationMode();
-      configurationMode = true;
+      delay(500);
+      ESP.restart();   // Arranque limpio → boot en modo AP sin configuración
       return;
     }
   }
@@ -883,7 +966,13 @@ bool connectToWiFi(String ssid, String password, bool keepAP) {
   // keepAP=true: mantiene AP activo mientras conecta STA (flujo /configure)
   // keepAP=false: conexión normal solo STA
   WiFi.mode(keepAP ? WIFI_AP_STA : WIFI_STA);
-  WiFi.begin(ssid.c_str(), password.c_str());
+
+  if (ssid.isEmpty()) {
+    // Usa credenciales ya provisionadas/guardadas en NVS por el stack WiFi (ej. WiFiProv BLE)
+    WiFi.begin();
+  } else {
+    WiFi.begin(ssid.c_str(), password.c_str());
+  }
 
   unsigned long startTime = millis();
   int dotCount = 0;
@@ -1034,28 +1123,26 @@ bool sendReading(float voltaje, float corriente, float potencia,
     logMessage("SEND", LOG_ERROR, "HTTP 400");
     
     if (response.indexOf("deviceId") != -1 || response.indexOf("Device not found") != -1) {
+      logMessage("MODE", LOG_ERROR, "Device deleted (reading 400) - resetting to factory");
       WiFi.disconnect();
       resetConfiguration();
-      startConfigurationMode();
-      configurationMode = true;
-      logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
+      delay(500);
+      ESP.restart();
     }
   } else if (httpCode == 401 || httpCode == 403) {
     logMessage("SEND", LOG_ERROR, "HTTP %d - Authentication error (Token invalid?)", httpCode);
   } else if (httpCode == 404) {
-    logMessage("SEND", LOG_ERROR, "HTTP 404 - Device not found");
+    logMessage("SEND", LOG_ERROR, "HTTP 404 - Device deleted - resetting to factory");
     WiFi.disconnect();
     resetConfiguration();
-    startConfigurationMode();
-    configurationMode = true;
-    logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
+    delay(500);
+    ESP.restart();
   } else if (httpCode == 409) {
-    logMessage("SEND", LOG_ERROR, "HTTP 409 - Conflict");
+    logMessage("SEND", LOG_ERROR, "HTTP 409 - MAC conflict - resetting to factory");
     WiFi.disconnect();
     resetConfiguration();
-    startConfigurationMode();
-    configurationMode = true;
-    logMessage("MODE", LOG_SUCCESS, "Now in configuration mode");
+    delay(500);
+    ESP.restart();
   } else if (httpCode == 500) {
     logMessage("SEND", LOG_ERROR, "HTTP 500 - Backend error");
   } else if (httpCode == -1) {
@@ -1086,15 +1173,86 @@ String getISO8601Time() {
  * Borra toda la configuración guardada en la memoria flash
  * Útil cuando el dispositivo fue eliminado del backend
  */
+// ============== BLE PROVISIONING ==============
+
+/**
+ * Inicia el servidor BLE de provisioning ESP-IDF.
+ * El teléfono (app VATTO) se conecta como cliente BLE y envía SSID + password.
+ * El ESP32 guarda las credenciales en NVS y se conecta automáticamente.
+ */
+void startBleProvisioning() {
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+  String bleName = String(BLE_SERVICE_PREFIX) + mac.substring(6); // Ej: VATTO_AABBCC
+
+  logMessage("BLE", LOG_INFO, "Starting BLE provisioning: %s", bleName.c_str());
+
+  WiFiProv.beginProvision(
+    NETWORK_PROV_SCHEME_BLE,
+    NETWORK_PROV_SCHEME_HANDLER_FREE_BLE,
+    NETWORK_PROV_SECURITY_1,
+    BLE_PROV_POP,
+    bleName.c_str()
+  );
+
+  bleProvisioningStarted = true;
+  logMessage("BLE", LOG_SUCCESS, "BLE ready. Device: %s | PoP: %s", bleName.c_str(), BLE_PROV_POP);
+}
+
+/**
+ * Detecta si el provisioning BLE completó (WiFi conectado) y hace auto-pairing.
+ * Llamado desde loop() en modo configuración.
+ */
+void handleBleAutoPairing() {
+  if (!bleProvisioningStarted) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  unsigned long now = millis();
+  if (now - lastBlePairingAttempt < BLE_PAIRING_RETRY_INTERVAL) return;
+  lastBlePairingAttempt = now;
+
+  logMessage("BLE", LOG_INFO, "WiFi connected via BLE provisioning - attempting auto-pairing");
+
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  delay(1000);
+
+  if (pairDeviceWithRetry("", MAX_PAIRING_RETRIES)) {
+    preferences.begin("pzem_config", false);
+    preferences.putInt("deviceId", deviceId);
+    preferences.putString("ssid", "");
+    preferences.putString("password", "");
+    preferences.putString("pairingCode", "");
+    preferences.putBool("useStoredWifiCreds", true);
+    preferences.end();
+
+    wifiSSID = "";
+    wifiPassword = "";
+    pairingCodeStored = "";
+    useStoredWifiCreds = true;
+
+    lastSuccessfulPairingTime = millis();
+    logMessage("BLE", LOG_SUCCESS, "BLE auto-pairing OK. DeviceId: %d - restarting", deviceId);
+    delay(1000);
+    ESP.restart();
+  } else {
+    logMessage("BLE", LOG_ERROR, "BLE auto-pairing failed - will retry in %dms", BLE_PAIRING_RETRY_INTERVAL);
+  }
+}
+
 void resetConfiguration() {
-  logMessage("RESET", LOG_WARN, "Clearing config");
+  logMessage("RESET", LOG_WARN, "Factory reset: borrando WiFi, deviceId y pairingCode de flash...");
   preferences.begin("pzem_config", false);
-  preferences.clear();
+  preferences.clear();   // Borra ssid, password, deviceId, pairingCode
   preferences.end();
+  // Borra también credenciales WiFi guardadas en NVS por el stack
+  WiFi.disconnect(true, true);
   deviceId = 0;
   wifiSSID = "";
   wifiPassword = "";
   pairingCodeStored = "";
+  useStoredWifiCreds = false;
   configurationMode = true;
-  logMessage("RESET", LOG_SUCCESS, "Config cleared");
+  logMessage("RESET", LOG_SUCCESS, "Flash borrado. El dispositivo arrancara en modo AP (Vatto-Setup).");
 }
+
+

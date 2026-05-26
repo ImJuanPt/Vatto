@@ -17,28 +17,28 @@ const navItems = [
 
 export function Navbar({ user, onLogout }: NavbarProps) {
   return (
-    <nav className="flex items-center justify-between rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-2 shadow-lg backdrop-blur-md">
+    <nav className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 shadow-lg backdrop-blur-md">
       {/* Logo y Marca */}
-      <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-        <img 
-          src="/LogoVatto.png" 
-          alt="Vatto Logo" 
-          className="h-20 w-20 object-contain"
+      <NavLink to="/" className="flex min-w-0 items-center gap-2 hover:opacity-80 transition-opacity">
+        <img
+          src="/LogoVatto.png"
+          alt="Vatto Logo"
+          className="h-12 w-12 sm:h-20 sm:w-20 object-contain"
         />
-        <div className="flex flex-col justify-center">
-          <p className="text-base font-semibold text-white leading-tight">Vatto</p>
-          <p className="text-xs text-emerald-100 leading-tight">Monitor inteligente</p>
+        <div className="min-w-0 flex flex-col justify-center">
+          <p className="truncate text-base font-semibold text-white leading-tight">Vatto</p>
+          <p className="truncate text-xs text-emerald-100 leading-tight">Monitor inteligente</p>
         </div>
       </NavLink>
 
       {/* Navegación Central */}
-      <div className="flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 p-1 text-sm font-medium text-emerald-100">
+      <div className="flex w-full flex-wrap items-center justify-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 p-1 text-sm font-medium text-emerald-100 sm:w-auto sm:justify-center sm:mx-4">
         {navItems.map((item) => (
           <NavLink
             key={item.id}
             to={item.to}
             className={({ isActive }) =>
-              `rounded-full px-4 py-1.5 transition-all duration-200 ${
+              `rounded-full px-4 py-1.5 text-center transition-all duration-200 ${
                 isActive ? "bg-white text-emerald-600 shadow" : "hover:bg-emerald-500/20 hover:text-white"
               }`
             }
@@ -49,7 +49,9 @@ export function Navbar({ user, onLogout }: NavbarProps) {
       </div>
 
       {/* Avatar Usuario */}
-      <UserAvatar user={user} onLogout={onLogout} />
+      <div className="min-w-0">
+        <UserAvatar user={user} onLogout={onLogout} />
+      </div>
     </nav>
   );
 }
